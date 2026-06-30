@@ -1,6 +1,5 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-
 from data.analyzer import DataAnalyzer
 from data.cleaning import DataCleaner
 from data.statistics import StatisticsEngine
@@ -10,8 +9,10 @@ from data.quality import DataQuality
 from data.correlation import CorrelationAnalyzer
 from ui.components.merge_panel import MergePanel
 from core.merge_engine import MergeEngine
+from ui.components.pivot_window import PivotWindow
 from ui.components.correlation_window import CorrelationWindow
 import pandas as pd
+from data.pivot import PivotEngine
 
 from ui.sidebar import Sidebar
 from ui.pages.dashboard import Dashboard
@@ -45,6 +46,7 @@ class InsightAIApp(ctk.CTk):
         self.chart_generator = ChartGenerator()
         self.profile = DatasetProfile()
         self.merge_engine = MergeEngine()
+        self.pivot_engine = PivotEngine()
         
 
         # =====================================
@@ -71,6 +73,43 @@ class InsightAIApp(ctk.CTk):
 
         self.dashboard.chart_controls.export_btn.configure(
             command=self.export_chart
+        )
+    # ==================================
+    # Display Pivot Table
+    # ==================================
+
+    def display_pivot(self, pivot_df):
+
+        self.result_box.configure(state="normal")
+
+        self.result_box.delete("1.0", "end")
+
+        self.result_box.insert(
+            "1.0",
+            pivot_df.to_string(index=False)
+        )
+
+        self.result_box.configure(state="disabled")
+
+
+    # ======================================================
+    # Show Pivot Table Builder
+    # ======================================================
+
+    def show_pivot(self):
+
+        if self.current_df is None:
+
+            messagebox.showwarning(
+                "No Dataset",
+                "Please upload a dataset first."
+            )
+            return
+
+        PivotWindow(
+            self,
+            self.current_df,
+            self.pivot_engine
         )
 
     # ======================================================

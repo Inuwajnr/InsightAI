@@ -106,6 +106,22 @@ class Sidebar(ctk.CTkFrame):
         )
 
         # =====================================
+        # Pivot Table
+        # =====================================
+
+        self.pivot_btn = ctk.CTkButton(
+            self,
+            text="📑 Pivot Table",
+            command=master.show_pivot
+        )
+
+        self.pivot_btn.pack(
+            pady=10,
+            padx=20,
+            fill="x"
+        )
+
+        # =====================================
         # Data Analysis
         # =====================================
 
