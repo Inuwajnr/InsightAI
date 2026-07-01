@@ -1,3 +1,4 @@
+import tkinter as tk
 import customtkinter as ctk
 from ui.components.pivot_grid import PivotGrid
 from core.pivot_chart import PivotChart
@@ -60,13 +61,17 @@ class PivotWindow(ctk.CTkToplevel):
             pady=10
         )
 
-        self.row_dropdown = ctk.CTkOptionMenu(
+        self.row_listbox = tk.Listbox(
             control_frame,
-            values=field_options,
-            width=180
+            selectmode=tk.MULTIPLE,
+            height=6,
+            exportselection=False
         )
 
-        self.row_dropdown.grid(
+        for col in columns:
+            self.row_listbox.insert(tk.END, col)
+
+        self.row_listbox.grid(
             row=0,
             column=1,
             padx=5
@@ -85,14 +90,17 @@ class PivotWindow(ctk.CTkToplevel):
             padx=10
         )
 
-        self.column_dropdown = ctk.CTkOptionMenu(
+        self.column_listbox = tk.Listbox(
             control_frame,
-            values=field_options,
-            width=180,
-            command=self.update_chart_value
+            selectmode=tk.MULTIPLE,
+            height=10,
+            exportselection=False
         )
 
-        self.column_dropdown.grid(
+        for col in columns:
+            self.column_listbox.insert(tk.END, col)
+
+        self.column_listbox.grid(
             row=0,
             column=3,
             padx=5
@@ -293,19 +301,53 @@ class PivotWindow(ctk.CTkToplevel):
 
         from tkinter import messagebox
 
-        rows = self.row_dropdown.get()
-        columns = self.column_dropdown.get()
+        # ----------------------------
+        # Rows
+        # ----------------------------
+
+        selected = self.row_listbox.curselection()
+
+        rows = [
+            self.row_listbox.get(i)
+            for i in selected
+        ]
+        self.current_row_fields = rows
+
+        # ----------------------------
+        # Columns
+        # ----------------------------
+
+        selected_columns = self.column_listbox.curselection()
+
+        columns = [
+            self.column_listbox.get(i)
+            for i in selected_columns
+        ]
+
+        # ----------------------------
+        # Values & Aggregation
+        # ----------------------------
+
         values = self.value_dropdown.get()
         agg = self.agg_dropdown.get()
 
         # ----------------------------
-        # Convert "(None)" to None
+        # Debug
         # ----------------------------
 
-        if rows == "(None)":
+        print("Rows:", rows)
+        print("Columns:", columns)
+        print("Values:", values)
+        print("Aggregation:", agg)
+
+        # ----------------------------
+        # Convert Empty Selection to None
+        # ----------------------------
+
+        if len(rows) == 0:
             rows = None
 
-        if columns == "(None)":
+        if len(columns) == 0:
             columns = None
 
         # ----------------------------
@@ -356,6 +398,9 @@ class PivotWindow(ctk.CTkToplevel):
                 numeric_cols[0]
             )
 
+            print(numeric_cols)
+            print(type(numeric_cols[0]))
+
     # ==================================
     # Create Chart
     # ==================================
@@ -371,5 +416,6 @@ class PivotWindow(ctk.CTkToplevel):
         self.chart_engine.create_chart(
             self.current_pivot,
             value_column,
-            chart_type
+            chart_type,
+            self.current_row_fields
         )

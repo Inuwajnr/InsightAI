@@ -14,7 +14,7 @@ class PivotEngine:
 
         pivot = pd.pivot_table(
             df,
-            index=rows if rows else None,
+            index=rows if len(rows) > 0 else None,
             columns=columns if columns else None,
             values=values,
             aggfunc=agg_function,

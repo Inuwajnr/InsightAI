@@ -4,11 +4,25 @@ import pandas as pd
 
 class PivotChart:
 
-    def create_chart(self, pivot_df, value_column, chart_type):
+    def create_chart(self, pivot_df, value_column, chart_type, row_fields):
 
         data = pivot_df.reset_index()
+        print("\n===== PIVOT DATA =====")
+        print(data)
 
-        x = data.iloc[:, 0].astype(str)
+        print("\n===== COLUMNS =====")
+        print(data.columns.tolist())
+
+        print("\nSelected Value Column:")
+        print(value_column)
+
+        print("\nSeries being plotted:")
+        print(data[value_column])
+
+        if row_fields:
+            x = data[row_fields].astype(str).agg(" - ".join, axis=1)
+        else:
+            x = data.iloc[:, 0].astype(str)
         y = pd.to_numeric(
                 data[value_column],
                 errors="coerce"
