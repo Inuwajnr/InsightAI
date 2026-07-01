@@ -1,4 +1,6 @@
 import customtkinter as ctk
+from ui.components.pivot_grid import PivotGrid
+from core.pivot_chart import PivotChart
 
 
 class PivotWindow(ctk.CTkToplevel):
@@ -9,6 +11,7 @@ class PivotWindow(ctk.CTkToplevel):
 
         self.df = df
         self.pivot_engine = pivot_engine
+        self.chart_engine = PivotChart()
 
         self.title("Pivot Table Builder")
         self.geometry("1100x700")
@@ -40,6 +43,8 @@ class PivotWindow(ctk.CTkToplevel):
         )
 
         columns = list(df.columns)
+        field_options = ["(None)"] + columns
+        placeholder = ["-- Select Field --"]
 
         # -----------------------
         # Rows
@@ -57,7 +62,7 @@ class PivotWindow(ctk.CTkToplevel):
 
         self.row_dropdown = ctk.CTkOptionMenu(
             control_frame,
-            values=columns,
+            values=field_options,
             width=180
         )
 
@@ -82,8 +87,9 @@ class PivotWindow(ctk.CTkToplevel):
 
         self.column_dropdown = ctk.CTkOptionMenu(
             control_frame,
-            values=columns,
-            width=180
+            values=field_options,
+            width=180,
+            command=self.update_chart_value
         )
 
         self.column_dropdown.grid(
@@ -152,6 +158,65 @@ class PivotWindow(ctk.CTkToplevel):
         )
 
         # -----------------------
+        # Chart Value
+        # -----------------------
+
+        ctk.CTkLabel(
+            control_frame,
+            text="Chart Value"
+        ).grid(
+            row=1,
+            column=2,
+            padx=10
+        )
+
+        self.chart_value_dropdown = ctk.CTkOptionMenu(
+            control_frame,
+            values=["Generate Pivot First"],
+            width=180
+        )
+
+        self.chart_value_dropdown.grid(
+            row=1,
+            column=3,
+            padx=5
+        )
+
+        # -----------------------
+        # Chart Type
+        # -----------------------
+
+        ctk.CTkLabel(
+            control_frame,
+            text="Chart Type"
+        ).grid(
+            row=2,
+            column=0,
+            padx=10,
+            pady=10
+        )
+
+        self.chart_type_dropdown = ctk.CTkOptionMenu(
+            control_frame,
+            values=[
+                "Bar",
+                "Column",
+                "Line",
+                "Pie"
+            ],
+            width=180
+        )
+
+        self.chart_type_dropdown.set("Bar")
+
+        self.chart_type_dropdown.grid(
+            row=2,
+            column=1,
+            padx=5,
+            pady=10
+        )
+
+        # -----------------------
         # Generate Button
         # -----------------------
 
@@ -168,16 +233,30 @@ class PivotWindow(ctk.CTkToplevel):
             sticky="e"
         )
 
-        # ==================================
-        # Result Box
-        # ==================================
+        # -----------------------
+        # Create Chart Button
+        # -----------------------
 
-        self.result_box = ctk.CTkTextbox(
-            self,
-            font=("Consolas", 12)
+        self.chart_btn = ctk.CTkButton(
+            control_frame,
+            text="📊 Create Chart",
+            command=self.create_chart
         )
 
-        self.result_box.pack(
+        self.chart_btn.grid(
+            row=1,
+            column=6,
+            padx=10,
+            pady=10
+        )
+
+        # ==================================
+        # Pivot Grid
+        # ==================================
+
+        self.result_grid = PivotGrid(self)
+
+        self.result_grid.pack(
             fill="both",
             expand=True,
             padx=15,
@@ -190,15 +269,21 @@ class PivotWindow(ctk.CTkToplevel):
 
     def display_pivot(self, pivot_df):
 
-        self.result_box.configure(state="normal")
-        self.result_box.delete("1.0", "end")
-
-        self.result_box.insert(
-            "1.0",
-            pivot_df.to_string(index=False)
+        self.result_grid.load_dataframe(
+            pivot_df.reset_index()
         )
 
-        self.result_box.configure(state="disabled")
+    # ==================================
+    # Update Chart Value
+    # ==================================
+
+    def update_chart_value(self, choice):
+
+        self.chart_value_dropdown.configure(
+            values=[choice]
+        )
+
+        self.chart_value_dropdown.set(choice)
 
     # ==================================
     # Generate Pivot
@@ -206,12 +291,48 @@ class PivotWindow(ctk.CTkToplevel):
 
     def generate_pivot(self):
 
+        from tkinter import messagebox
+
         rows = self.row_dropdown.get()
         columns = self.column_dropdown.get()
         values = self.value_dropdown.get()
         agg = self.agg_dropdown.get()
 
-        pivot = self.pivot_engine.create_pivot(
+        # ----------------------------
+        # Convert "(None)" to None
+        # ----------------------------
+
+        if rows == "(None)":
+            rows = None
+
+        if columns == "(None)":
+            columns = None
+
+        # ----------------------------
+        # Validation
+        # ----------------------------
+
+        if not values:
+
+            messagebox.showwarning(
+                "Missing Field",
+                "Please select a Value field."
+            )
+            return
+
+        if rows is None and columns is None:
+
+            messagebox.showwarning(
+                "Missing Field",
+                "Please select either a Row field or a Column field."
+            )
+            return
+
+        # ----------------------------
+        # Create Pivot
+        # ----------------------------
+
+        self.current_pivot = self.pivot_engine.create_pivot(
             self.df,
             rows,
             columns,
@@ -219,4 +340,36 @@ class PivotWindow(ctk.CTkToplevel):
             agg
         )
 
-        self.display_pivot(pivot)
+        self.display_pivot(self.current_pivot)
+
+        numeric_cols = list(
+            self.current_pivot.select_dtypes(include="number").columns
+        )
+
+        if numeric_cols:
+
+            self.chart_value_dropdown.configure(
+                values=numeric_cols
+            )
+
+            self.chart_value_dropdown.set(
+                numeric_cols[0]
+            )
+
+    # ==================================
+    # Create Chart
+    # ==================================
+
+    def create_chart(self):
+
+        if not hasattr(self, "current_pivot"):
+            return
+
+        value_column = self.chart_value_dropdown.get()
+        chart_type = self.chart_type_dropdown.get()
+
+        self.chart_engine.create_chart(
+            self.current_pivot,
+            value_column,
+            chart_type
+        )

@@ -14,11 +14,12 @@ class PivotEngine:
 
         pivot = pd.pivot_table(
             df,
-            index=rows,
-            columns=columns,
+            index=rows if rows else None,
+            columns=columns if columns else None,
             values=values,
             aggfunc=agg_function,
-            fill_value=0
+            fill_value=0,
+            observed=False
         )
 
-        return pivot.reset_index()
+        return pivot
