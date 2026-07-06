@@ -2,6 +2,7 @@ import tkinter as tk
 import customtkinter as ctk
 from ui.components.pivot_grid import PivotGrid
 from core.pivot_chart import PivotChart
+from ui.components.filter_dialog import FilterDialog
 
 
 class PivotWindow(ctk.CTkToplevel):
@@ -58,26 +59,43 @@ class PivotWindow(ctk.CTkToplevel):
             row=0,
             column=0,
             padx=10,
-            pady=10
+            sticky="n"
         )
 
-        self.row_listbox = tk.Listbox(
+        self.row_frame = ctk.CTkScrollableFrame(
             control_frame,
-            selectmode=tk.MULTIPLE,
-            height=6,
-            exportselection=False
+            width=180,
+            height=120
         )
 
-        for col in columns:
-            self.row_listbox.insert(tk.END, col)
-
-        self.row_listbox.grid(
+        self.row_frame.grid(
             row=0,
             column=1,
-            padx=5
+            padx=5,
+            pady=5
         )
 
-        # -----------------------
+        self.row_vars = {}
+
+        for col in columns:
+
+            var = ctk.BooleanVar()
+
+            chk = ctk.CTkCheckBox(
+                self.row_frame,
+                text=col,
+                variable=var
+            )
+
+            chk.pack(
+                anchor="w",
+                padx=5,
+                pady=2
+            )
+
+            self.row_vars[col] = var
+
+       # -----------------------
         # Columns
         # -----------------------
 
@@ -87,27 +105,44 @@ class PivotWindow(ctk.CTkToplevel):
         ).grid(
             row=0,
             column=2,
-            padx=10
+            padx=10,
+            sticky="n"
         )
 
-        self.column_listbox = tk.Listbox(
+        self.column_frame = ctk.CTkScrollableFrame(
             control_frame,
-            selectmode=tk.MULTIPLE,
-            height=10,
-            exportselection=False
+            width=180,
+            height=120
         )
 
-        for col in columns:
-            self.column_listbox.insert(tk.END, col)
-
-        self.column_listbox.grid(
+        self.column_frame.grid(
             row=0,
             column=3,
-            padx=5
+            padx=5,
+            pady=5
         )
 
+        self.column_vars = {}
+
+        for col in columns:
+
+            var = ctk.BooleanVar()
+
+            chk = ctk.CTkCheckBox(
+                self.column_frame,
+                text=col,
+                variable=var
+            )
+
+            chk.pack(
+                anchor="w",
+                padx=5,
+                pady=2
+            )
+
+            self.column_vars[col] = var
         # -----------------------
-        # Values
+        # Values (Multi Select)
         # -----------------------
 
         ctk.CTkLabel(
@@ -116,21 +151,88 @@ class PivotWindow(ctk.CTkToplevel):
         ).grid(
             row=0,
             column=4,
-            padx=10
+            padx=10,
+            sticky="n"
         )
 
-        self.value_dropdown = ctk.CTkOptionMenu(
+        self.value_listbox = ctk.CTkScrollableFrame(
             control_frame,
-            values=columns,
-            width=180
+            width=180,
+            height=120
         )
 
-        self.value_dropdown.grid(
+        self.value_listbox.grid(
             row=0,
             column=5,
-            padx=5
+            padx=5,
+            pady=5
         )
 
+        self.value_vars = {}
+
+        for col in columns:
+
+            var = ctk.BooleanVar()
+
+            chk = ctk.CTkCheckBox(
+                self.value_listbox,
+                text=col,
+                variable=var
+            )
+
+            chk.pack(
+                anchor="w",
+                padx=5,
+                pady=2
+            )
+
+            self.value_vars[col] = var
+        # -----------------------
+        # Filters
+        # -----------------------
+
+        ctk.CTkLabel(
+            control_frame,
+            text="Filters"
+        ).grid(
+            row=0,
+            column=6,
+            padx=10,
+            sticky="n"
+        )
+
+        self.filter_listbox = ctk.CTkScrollableFrame(
+            control_frame,
+            width=180,
+            height=120
+        )
+
+        self.filter_listbox.grid(
+            row=0,
+            column=7,
+            padx=5,
+            pady=5
+        )
+
+        self.filter_vars = {}
+
+        for col in columns:
+
+            var = ctk.BooleanVar()
+
+            chk = ctk.CTkCheckBox(
+                self.filter_listbox,
+                text=col,
+                variable=var
+            )
+
+            chk.pack(
+                anchor="w",
+                padx=5,
+                pady=2
+            )
+
+            self.filter_vars[col] = var
         # -----------------------
         # Aggregation
         # -----------------------
@@ -305,31 +407,47 @@ class PivotWindow(ctk.CTkToplevel):
         # Rows
         # ----------------------------
 
-        selected = self.row_listbox.curselection()
-
         rows = [
-            self.row_listbox.get(i)
-            for i in selected
+            field
+            for field, var in self.row_vars.items()
+            if var.get()
         ]
-        self.current_row_fields = rows
+        self.current_row_fields = rows.copy()
 
         # ----------------------------
         # Columns
         # ----------------------------
 
-        selected_columns = self.column_listbox.curselection()
-
         columns = [
-            self.column_listbox.get(i)
-            for i in selected_columns
+            field
+            for field, var in self.column_vars.items()
+            if var.get()
         ]
+        self.current_column_fields = columns.copy()
 
         # ----------------------------
         # Values & Aggregation
         # ----------------------------
 
-        values = self.value_dropdown.get()
+        values = [
+            field
+            for field, var in self.value_vars.items()
+            if var.get()
+        ]
         agg = self.agg_dropdown.get()
+
+
+        # ----------------------------
+        # Filters
+        # ----------------------------
+
+        filters = [
+            field
+            for field, var in self.filter_vars.items()
+            if var.get()
+        ]
+
+        print("Filters:", filters)
 
         # ----------------------------
         # Debug
@@ -369,13 +487,41 @@ class PivotWindow(ctk.CTkToplevel):
                 "Please select either a Row field or a Column field."
             )
             return
+        
+        # ----------------------------
+        # Show Filter Dialog
+        # ----------------------------
+
+        filtered_df = self.df
+
+        if filters:
+
+            dialog = FilterDialog(
+                self,
+                self.df,
+                filters
+            )
+
+            self.wait_window(dialog)
+
+            selected_filters = dialog.result
+
+            print(selected_filters)
+
+            filtered_df = self.df.copy()
+
+            for field, value in selected_filters.items():
+
+                filtered_df = filtered_df[
+                    filtered_df[field].astype(str) == value
+                ]
 
         # ----------------------------
         # Create Pivot
         # ----------------------------
 
         self.current_pivot = self.pivot_engine.create_pivot(
-            self.df,
+            filtered_df,
             rows,
             columns,
             values,
@@ -413,9 +559,11 @@ class PivotWindow(ctk.CTkToplevel):
         value_column = self.chart_value_dropdown.get()
         chart_type = self.chart_type_dropdown.get()
 
+        row_fields = getattr(self, "current_row_fields", [])
+
         self.chart_engine.create_chart(
             self.current_pivot,
             value_column,
             chart_type,
-            self.current_row_fields
+            row_fields
         )
