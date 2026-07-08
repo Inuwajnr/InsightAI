@@ -12,34 +12,13 @@ class PivotEngine:
         agg_function
     ):
 
-        # ----------------------------
-        # Convert empty selections
-        # ----------------------------
-
         if not rows:
             rows = None
 
         if not columns:
             columns = None
 
-        # ----------------------------
-        # Create Pivot
-        # ----------------------------
-
-        pivot = pd.pivot_table(
-            df,
-            index=rows,
-            columns=columns,
-            values=values,
-            aggfunc=agg_function,
-            fill_value=0,
-            observed=False
-        )
-
-        # ----------------------------
-        # Handle multiple value fields
-        # ----------------------------
-
+        # Single value
         if len(values) == 1:
             values = values[0]
 
@@ -53,15 +32,11 @@ class PivotEngine:
             observed=False
         )
 
-        # ----------------------------
-        # Flatten MultiIndex columns
-        # ----------------------------
-
         if isinstance(pivot.columns, pd.MultiIndex):
 
             pivot.columns = [
-                " - ".join(map(str, col)).strip()
-                for col in pivot.columns.values
+                " - ".join(map(str, col))
+                for col in pivot.columns
             ]
 
         return pivot

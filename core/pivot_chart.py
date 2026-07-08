@@ -4,7 +4,7 @@ import pandas as pd
 
 class PivotChart:
 
-    def create_chart(self, pivot_df, value_column, chart_type, row_fields):
+    def create_chart(self, pivot_df, value_column, chart_type, row_fields,x_axis):
 
         data = pivot_df.reset_index()
         print("\n===== PIVOT DATA =====")
@@ -83,6 +83,106 @@ class PivotChart:
                     fontweight="bold"
                 )
 
+
+        # ==========================
+        # STACKED COLUMN CHART 
+        # ==========================
+
+        elif chart_type == "Stacked Column":
+            
+            x = data.iloc[:, 0].astype(str)
+
+            numeric_data = data.select_dtypes(include="number")
+
+            bottom = [0] * len(x)
+
+            for column in numeric_data.columns:
+
+                bars = plt.bar(
+                    x,
+                    numeric_data[column],
+                    bottom=bottom,
+                    label=column
+                )
+
+                # Display labels inside each stack
+                for bar in bars:
+
+                    height = bar.get_height()
+
+                    # Skip labels for zero values
+                    if height == 0:
+                        continue
+
+                    plt.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_y() + height / 2,
+                        f"{height:,.2f}",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                        color="white",
+                        fontweight="bold"
+                    )
+
+                # Update bottom for next stack
+                bottom = [
+                    b + v
+                    for b, v in zip(bottom, numeric_data[column])
+                ]
+
+            plt.legend(title="Series")
+
+        # ==========================
+        # STACKED BAR CHART
+        # ==========================
+
+        elif chart_type == "Stacked Bar":
+
+            # First column contains row labels
+            y_labels = data.iloc[:, 0].astype(str)
+
+            # Remaining numeric columns
+            numeric_data = data.select_dtypes(include="number")
+
+            left = [0] * len(y_labels)
+
+            for column in numeric_data.columns:
+
+                bars = plt.barh(
+                    y_labels,
+                    numeric_data[column],
+                    left=left,
+                    label=column
+                )
+
+                # Display labels
+                for bar in bars:
+
+                    width = bar.get_width()
+
+                    if width == 0:
+                        continue
+
+                    plt.text(
+                        bar.get_x() + width / 2,
+                        bar.get_y() + bar.get_height() / 2,
+                        f"{width:,.2f}",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                        color="white",
+                        fontweight="bold"
+                    )
+
+                # Update left position
+                left = [
+                    l + v
+                    for l, v in zip(left, numeric_data[column])
+                ]
+
+            plt.legend(title="Series")
+
         # ==========================
         # LINE CHART
         # ==========================
@@ -108,6 +208,44 @@ class PivotChart:
                     fontsize=9,
                     fontweight="bold"
                 )
+
+        # ==========================
+        # AREA CHART
+        # ==========================
+
+        elif chart_type == "Area":
+
+            plt.fill_between(
+                range(len(y)),
+                y,
+                alpha=0.4
+            )
+
+            plt.plot(
+                range(len(y)),
+                y,
+                marker="o",
+                linewidth=3
+            )
+
+            plt.xticks(
+                range(len(x)),
+                x,
+                rotation=30
+            )
+
+            # Display value on each point
+            for i, value in enumerate(y):
+
+                plt.text(
+                    i,
+                    value,
+                    f"{value:,.2f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=9,
+                    fontweight="bold"
+                )
         # ==========================
         # PIE CHART
         # ==========================
@@ -125,6 +263,71 @@ class PivotChart:
             plt.tight_layout()
             plt.show()
             return
+        
+
+        # ==========================
+        # DOUGHNUT CHART
+        # ==========================
+
+        elif chart_type == "Doughnut":
+
+            plt.pie(
+                y,
+                labels=x,
+                autopct="%1.1f%%",
+                startangle=90,
+                wedgeprops=dict(width=0.45)
+            )
+
+            plt.title(value_column)
+            plt.tight_layout()
+            plt.show()
+            return
+        
+
+        # ==========================
+        # SCATTER CHART
+        # ==========================
+
+        elif chart_type == "Scatter":
+
+            x = pd.to_numeric(
+                data[x_axis],
+                errors="coerce"
+            ).fillna(0)
+
+            y = pd.to_numeric(
+                data[value_column],
+                errors="coerce"
+            ).fillna(0)
+
+            plt.scatter(
+                x,
+                y,
+                s=80,
+                alpha=0.8
+            )
+
+            # Show value labels
+            for i in range(len(x)):
+
+                plt.text(
+                    x.iloc[i],
+                    y.iloc[i],
+                    f"{y.iloc[i]:,.2f}",
+                    fontsize=8,
+                    ha="left",
+                    va="bottom"
+                )
+
+            plt.xlabel(x_axis)
+            plt.ylabel(value_column)
+
+            plt.title(f"{value_column} vs {x_axis}")
+
+            plt.tight_layout()
+            plt.show()
+            return
 
         # ==========================
         # COMMON SETTINGS
@@ -135,11 +338,20 @@ class PivotChart:
         plt.ylabel(value_column)
 
         plt.xticks(rotation=30)
-        if chart_type == "Bar":
-            plt.xlim(0, max(y) * 1.15)
+        if chart_type in ["Bar", "Stacked Bar"]:
 
-        elif chart_type == "Column":
-            plt.ylim(0, max(y) * 1.10)
+            max_total = numeric_data.sum(axis=1).max() if chart_type == "Stacked Bar" else max(y)
+
+            plt.xlim(0, max_total * 1.10)
+
+        elif chart_type in ["Column", "Stacked Column"]:
+
+            if chart_type == "Stacked Column":
+                max_total = numeric_data.sum(axis=1).max()
+            else:
+                max_total = max(y)
+
+            plt.ylim(0, max_total * 1.10)
         plt.tight_layout()
 
         plt.show()

@@ -293,6 +293,31 @@ class PivotWindow(ctk.CTkToplevel):
         )
 
         # -----------------------
+        # X Axis (Scatter Chart)
+        # -----------------------
+
+        ctk.CTkLabel(
+            control_frame,
+            text="X-Axis"
+        ).grid(
+            row=1,
+            column=4,
+            padx=10
+        )
+
+        self.x_axis_dropdown = ctk.CTkOptionMenu(
+            control_frame,
+            values=["Generate Pivot First"],
+            width=180
+        )
+
+        self.x_axis_dropdown.grid(
+            row=1,
+            column=5,
+            padx=5
+        )
+
+        # -----------------------
         # Chart Type
         # -----------------------
 
@@ -311,8 +336,13 @@ class PivotWindow(ctk.CTkToplevel):
             values=[
                 "Bar",
                 "Column",
+                "Stacked Column",
+                "Stacked Bar",
                 "Line",
-                "Pie"
+                "Area",
+                "Pie",
+                "Doughnut",
+                "Scatter"
             ],
             width=180
         )
@@ -337,10 +367,11 @@ class PivotWindow(ctk.CTkToplevel):
         )
 
         self.generate_btn.grid(
-            row=1,
-            column=5,
+            row=2,
+            column=3,
+            padx=10,
             pady=10,
-            sticky="e"
+            sticky="w"
         )
 
         # -----------------------
@@ -354,10 +385,11 @@ class PivotWindow(ctk.CTkToplevel):
         )
 
         self.chart_btn.grid(
-            row=1,
-            column=6,
+            row=2,
+            column=4,
             padx=10,
-            pady=10
+            pady=10,
+            sticky="w"
         )
 
         # ==================================
@@ -547,6 +579,17 @@ class PivotWindow(ctk.CTkToplevel):
             print(numeric_cols)
             print(type(numeric_cols[0]))
 
+        # Populate X-Axis dropdown
+        x_cols = list(
+            self.current_pivot.select_dtypes(include="number").columns
+        )
+
+        self.x_axis_dropdown.configure(
+            values=x_cols
+        )
+
+        self.x_axis_dropdown.set(x_cols[0])
+
     # ==================================
     # Create Chart
     # ==================================
@@ -561,9 +604,12 @@ class PivotWindow(ctk.CTkToplevel):
 
         row_fields = getattr(self, "current_row_fields", [])
 
+
+        x_axis = self.x_axis_dropdown.get()
         self.chart_engine.create_chart(
             self.current_pivot,
             value_column,
             chart_type,
-            row_fields
+            row_fields,
+            x_axis
         )
