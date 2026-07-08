@@ -133,6 +133,62 @@ class PivotChart:
 
             plt.legend(title="Series")
 
+
+        # ==========================
+        # 100% STACKED COLUMN CHART
+        # ==========================
+
+        elif chart_type == "100% Stacked Column":
+
+            x = data.iloc[:, 0].astype(str)
+
+            numeric_data = data.select_dtypes(include="number")
+
+            # Convert each row to percentages
+            percent_data = numeric_data.div(
+                numeric_data.sum(axis=1),
+                axis=0
+            ) * 100
+
+            bottom = [0] * len(x)
+
+            for column in percent_data.columns:
+
+                bars = plt.bar(
+                    x,
+                    percent_data[column],
+                    bottom=bottom,
+                    label=column
+                )
+
+                # Display percentage labels
+                for bar in bars:
+
+                    height = bar.get_height()
+
+                    if height <= 0:
+                        continue
+
+                    plt.text(
+                        bar.get_x() + bar.get_width()/2,
+                        bar.get_y() + height/2,
+                        f"{height:.1f}%",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                        color="white",
+                        fontweight="bold"
+                    )
+
+                bottom = [
+                    b + v
+                    for b, v in zip(bottom, percent_data[column])
+                ]
+
+            plt.legend(title="Series")
+
+            plt.ylim(0, 100)
+
         # ==========================
         # STACKED BAR CHART
         # ==========================
@@ -179,6 +235,59 @@ class PivotChart:
                 left = [
                     l + v
                     for l, v in zip(left, numeric_data[column])
+                ]
+
+            plt.legend(title="Series")
+
+        # ==========================
+        # 100% STACKED BAR CHART
+        # ==========================
+
+        elif chart_type == "100% Stacked Bar":
+
+            y_labels = data.iloc[:, 0].astype(str)
+
+            numeric_data = data.select_dtypes(include="number")
+
+            # Convert each row to percentages
+            percent_data = numeric_data.div(
+                numeric_data.sum(axis=1),
+                axis=0
+            ) * 100
+
+            left = [0] * len(y_labels)
+
+            for column in percent_data.columns:
+
+                bars = plt.barh(
+                    y_labels,
+                    percent_data[column],
+                    left=left,
+                    label=column
+                )
+
+                # Display percentage labels
+                for bar in bars:
+
+                    width = bar.get_width()
+
+                    if width <= 0:
+                        continue
+
+                    plt.text(
+                        bar.get_x() + width / 2,
+                        bar.get_y() + bar.get_height() / 2,
+                        f"{width:.1f}%",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                        color="white",
+                        fontweight="bold"
+                    )
+
+                left = [
+                    l + v
+                    for l, v in zip(left, percent_data[column])
                 ]
 
             plt.legend(title="Series")
@@ -338,20 +447,25 @@ class PivotChart:
         plt.ylabel(value_column)
 
         plt.xticks(rotation=30)
-        if chart_type in ["Bar", "Stacked Bar"]:
+        if chart_type == "Bar":
+            plt.xlim(0, max(y) * 1.10)
 
-            max_total = numeric_data.sum(axis=1).max() if chart_type == "Stacked Bar" else max(y)
-
+        elif chart_type == "Stacked Bar":
+            max_total = numeric_data.sum(axis=1).max()
             plt.xlim(0, max_total * 1.10)
 
-        elif chart_type in ["Column", "Stacked Column"]:
+        elif chart_type == "100% Stacked Bar":
+            plt.xlim(0, 100)
 
-            if chart_type == "Stacked Column":
-                max_total = numeric_data.sum(axis=1).max()
-            else:
-                max_total = max(y)
+        elif chart_type == "Column":
+            plt.ylim(0, max(y) * 1.10)
 
+        elif chart_type == "Stacked Column":
+            max_total = numeric_data.sum(axis=1).max()
             plt.ylim(0, max_total * 1.10)
+
+        elif chart_type == "100% Stacked Column":
+            plt.ylim(0, 100)
         plt.tight_layout()
 
         plt.show()
