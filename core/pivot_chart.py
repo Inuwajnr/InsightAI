@@ -1,23 +1,96 @@
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.ticker import FuncFormatter
 
+
+
+COLORS = [
+    "#2563EB",  # Blue
+    "#10B981",  # Green
+    "#F59E0B",  # Amber
+    "#EF4444",  # Red
+    "#8B5CF6",  # Purple
+    "#06B6D4",  # Cyan
+    "#EC4899",  # Pink
+    "#84CC16",  # Lime
+]
+
+def format_number(value):
+
+    abs_value = abs(value)
+
+    if abs_value >= 1_000_000_000:
+        return f"{value/1_000_000_000:.2f}B"
+
+    elif abs_value >= 1_000_000:
+        return f"{value/1_000_000:.2f}M"
+
+    elif abs_value >= 1_000:
+        return f"{value/1_000:.2f}K"
+
+    elif float(value).is_integer():
+        return f"{int(value)}"
+
+    return f"{value:.2f}"
 
 class PivotChart:
 
-    def create_chart(self, pivot_df, value_column, chart_type, row_fields,x_axis):
+    def create_chart(self, pivot_df, value_column, chart_type, row_fields,x_axis, original_df=None):
 
-        data = pivot_df.reset_index()
-        print("\n===== PIVOT DATA =====")
-        print(data)
+        # ==========================
+        # Histogram uses original data
+        # ==========================
 
-        print("\n===== COLUMNS =====")
-        print(data.columns.tolist())
+        if chart_type == "Histogram":
 
-        print("\nSelected Value Column:")
-        print(value_column)
+            values = pd.to_numeric(
+                original_df[value_column],
+                errors="coerce"
+            ).dropna()
 
-        print("\nSeries being plotted:")
-        print(data[value_column])
+            plt.figure(figsize=(10, 6))
+
+            plt.hist(
+                values,
+                bins='auto',
+                color=COLORS[0],
+                edgecolor="black"
+            )
+
+            plt.title(f"Distribution of {value_column}")
+            plt.xlabel(value_column)
+            plt.ylabel("Frequency")
+
+            plt.tight_layout()
+            plt.show()
+            return
+
+        # --------------------------
+        # Everything below is for pivot charts
+        # --------------------------
+
+        if chart_type not in [
+            "Histogram",
+            "Box Plot",
+            "Heatmap",
+            "Bubble",
+            "Pareto",
+            "Waterfall"
+        ]:
+
+            data = pivot_df.reset_index()
+
+            print("\n===== PIVOT DATA =====")
+            print(data)
+
+            print("\n===== COLUMNS =====")
+            print(data.columns.tolist())
+
+            print("\nSelected Value Column:")
+            print(value_column)
+
+            print("\nSeries being plotted:")
+            print(data[value_column])
 
         if row_fields:
             x = data[row_fields].astype(str).agg(" - ".join, axis=1)
@@ -38,9 +111,9 @@ class PivotChart:
             bars = plt.barh(
                 x,
                 y,
-                color="#3B82F6"
+                color=COLORS[0]
             )
-
+    
             # Display the aggregated value above each bar
             for bar in bars:
 
@@ -49,7 +122,7 @@ class PivotChart:
                 plt.text(
                     width + (max(y) * 0.01),           # Slightly to the right of the bar
                     bar.get_y() + bar.get_height()/2,  # Middle of the bar
-                    f"{width:,.2f}",
+                    format_number(width),  # Format the number
                     ha="left",
                     va="center",
                     fontsize=10,
@@ -65,7 +138,7 @@ class PivotChart:
             bars = plt.bar(
                 x,
                 y,
-                color="#10B981"
+                color=COLORS[1]
             )
 
             # Display the aggregated value above each bar
@@ -76,7 +149,7 @@ class PivotChart:
                 plt.text(
                     bar.get_x() + bar.get_width() / 2,
                     height,
-                    f"{height:,.2f}",
+                    format_number(height),  # Format the number
                     ha="center",
                     va="bottom",
                     fontsize=10,
@@ -102,7 +175,8 @@ class PivotChart:
                     x,
                     numeric_data[column],
                     bottom=bottom,
-                    label=column
+                    label=column,
+                    color=COLORS[numeric_data.columns.get_loc(column) % len(COLORS)]
                 )
 
                 # Display labels inside each stack
@@ -117,7 +191,7 @@ class PivotChart:
                     plt.text(
                         bar.get_x() + bar.get_width() / 2,
                         bar.get_y() + height / 2,
-                        f"{height:,.2f}",
+                        format_number(height),
                         ha="center",
                         va="center",
                         fontsize=8,
@@ -158,7 +232,8 @@ class PivotChart:
                     x,
                     percent_data[column],
                     bottom=bottom,
-                    label=column
+                    label=column,
+                    color=COLORS[percent_data.columns.get_loc(column) % len(COLORS)]
                 )
 
                 # Display percentage labels
@@ -209,7 +284,8 @@ class PivotChart:
                     y_labels,
                     numeric_data[column],
                     left=left,
-                    label=column
+                    label=column,
+                    color=COLORS[numeric_data.columns.get_loc(column) % len(COLORS)]
                 )
 
                 # Display labels
@@ -223,7 +299,7 @@ class PivotChart:
                     plt.text(
                         bar.get_x() + width / 2,
                         bar.get_y() + bar.get_height() / 2,
-                        f"{width:,.2f}",
+                        format_number(width),
                         ha="center",
                         va="center",
                         fontsize=8,
@@ -263,7 +339,8 @@ class PivotChart:
                     y_labels,
                     percent_data[column],
                     left=left,
-                    label=column
+                    label=column,
+                    color=COLORS[percent_data.columns.get_loc(column) % len(COLORS)]
                 )
 
                 # Display percentage labels
@@ -311,7 +388,7 @@ class PivotChart:
                 plt.text(
                     x[i],
                     value,
-                    f"{value:,.2f}",
+                    format_number(value),
                     ha="center",
                     va="bottom",
                     fontsize=9,
@@ -349,7 +426,7 @@ class PivotChart:
                 plt.text(
                     i,
                     value,
-                    f"{value:,.2f}",
+                    format_number(value),
                     ha="center",
                     va="bottom",
                     fontsize=9,
@@ -364,6 +441,7 @@ class PivotChart:
             plt.pie(
                 y,
                 labels=x,
+                colors=COLORS[:len(x)],
                 autopct="%1.1f%%",
                 startangle=90
             )
@@ -383,12 +461,53 @@ class PivotChart:
             plt.pie(
                 y,
                 labels=x,
+                colors=COLORS[:len(x)],
                 autopct="%1.1f%%",
                 startangle=90,
                 wedgeprops=dict(width=0.45)
             )
 
             plt.title(value_column)
+            plt.tight_layout()
+            plt.show()
+            return
+        
+        # ==========================
+        # HISTOGRAM
+        # ==========================
+
+        elif chart_type == "Histogram":
+
+            values = pd.to_numeric(
+                original_df[value_column],
+                errors="coerce"
+            ).dropna()
+
+            self.fig = plt.figure(figsize=(10, 6))
+
+            plt.hist(
+                values,
+                bins="auto",
+                color=COLORS[0],
+                edgecolor="black",
+                alpha=0.85
+            )
+
+            plt.title(
+                f"Distribution of {value_column}",
+                fontsize=16,
+                fontweight="bold"
+            )
+
+            plt.xlabel(value_column)
+            plt.ylabel("Frequency")
+
+            plt.grid(
+                axis="y",
+                linestyle="--",
+                alpha=0.4
+            )
+
             plt.tight_layout()
             plt.show()
             return
@@ -442,8 +561,27 @@ class PivotChart:
         # COMMON SETTINGS
         # ==========================
 
-        plt.title(f"{value_column} by {data.columns[0]}")
-        plt.xlabel(data.columns[0])
+        if row_fields:
+
+            title = f"{value_column} by {' → '.join(row_fields)}"
+
+        else:
+
+            title = value_column
+
+        plt.title(
+            title,
+            fontsize=16,
+            fontweight="bold"
+        )
+        if row_fields:
+
+            plt.xlabel(" → ".join(row_fields))
+
+        else:
+
+            plt.xlabel(data.columns[0])
+
         plt.ylabel(value_column)
 
         plt.xticks(rotation=30)
@@ -466,6 +604,25 @@ class PivotChart:
 
         elif chart_type == "100% Stacked Column":
             plt.ylim(0, 100)
+
+        formatter = FuncFormatter(lambda x, pos: format_number(x))
+
+        if chart_type in [
+            "Column",
+            "Stacked Column",
+            "Bar",
+            "Stacked Bar",
+            "Line",
+            "Area",
+            "Scatter"
+        ]:
+
+            ax = plt.gca()
+
+            if chart_type in ["Bar", "Stacked Bar"]:
+                ax.xaxis.set_major_formatter(formatter)
+            else:
+                ax.yaxis.set_major_formatter(formatter)
         plt.tight_layout()
 
         plt.show()

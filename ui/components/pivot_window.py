@@ -344,7 +344,8 @@ class PivotWindow(ctk.CTkToplevel):
                 "Area",
                 "Pie",
                 "Doughnut",
-                "Scatter"
+                "Scatter",
+                "Histogram",
             ],
             width=180
         )
@@ -353,6 +354,33 @@ class PivotWindow(ctk.CTkToplevel):
 
         self.chart_type_dropdown.grid(
             row=2,
+            column=1,
+            padx=5,
+            pady=10
+        )
+
+        # -----------------------
+        # Analysis Field
+        # -----------------------
+
+        ctk.CTkLabel(
+            control_frame,
+            text="Analysis Field"
+        ).grid(
+            row=3,
+            column=0,
+            padx=10,
+            pady=10
+        )
+
+        self.analysis_field_dropdown = ctk.CTkOptionMenu(
+            control_frame,
+            values=["Select Numeric Field"],
+            width=180
+        )
+
+        self.analysis_field_dropdown.grid(
+            row=3,
             column=1,
             padx=5,
             pady=10
@@ -581,6 +609,21 @@ class PivotWindow(ctk.CTkToplevel):
             print(numeric_cols)
             print(type(numeric_cols[0]))
 
+        # Populate Analysis Field dropdown
+        original_numeric_cols = list(
+            self.df.select_dtypes(include="number").columns
+        )
+
+        if original_numeric_cols:
+
+            self.analysis_field_dropdown.configure(
+                values=original_numeric_cols
+            )
+
+            self.analysis_field_dropdown.set(
+                original_numeric_cols[0]
+            )
+
         # Populate X-Axis dropdown
         x_cols = list(
             self.current_pivot.select_dtypes(include="number").columns
@@ -601,8 +644,18 @@ class PivotWindow(ctk.CTkToplevel):
         if not hasattr(self, "current_pivot"):
             return
 
-        value_column = self.chart_value_dropdown.get()
         chart_type = self.chart_type_dropdown.get()
+
+        # Statistical charts use original dataset
+        if chart_type in [
+            "Histogram",
+            "Box Plot",
+            "Heatmap",
+            "Bubble"
+        ]:
+            value_column = self.analysis_field_dropdown.get()
+        else:
+            value_column = self.chart_value_dropdown.get()
 
         row_fields = getattr(self, "current_row_fields", [])
 
@@ -613,5 +666,6 @@ class PivotWindow(ctk.CTkToplevel):
             value_column,
             chart_type,
             row_fields,
-            x_axis
+            x_axis,
+            self.df
         )
