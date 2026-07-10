@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
+import squarify
 import pandas as pd
 from matplotlib.ticker import FuncFormatter
 
@@ -110,12 +112,55 @@ class PivotChart:
             plt.tight_layout()
             plt.show()
             return
+        
+        # ==========================
+        # HEATMAP
+        # ==========================
+
+        elif chart_type == "Heatmap":
+
+            numeric_df = original_df.select_dtypes(include="number")
+
+            corr = numeric_df.corr()
+
+            self.fig = plt.figure(figsize=(10, 8))
+
+            sns.heatmap(
+                corr,
+                annot=True,
+                cmap="RdYlGn",
+                linewidths=0.5,
+                fmt=".2f"
+            )
+
+            plt.title(
+                "Correlation Heatmap",
+                fontsize=16,
+                fontweight="bold"
+            )
+
+            plt.tight_layout()
+            plt.show()
+            return
 
         # --------------------------
         # Everything below is for pivot charts
         # --------------------------
 
         data = pivot_df.reset_index()
+        # ==================================
+        # Prepare chart data
+        # ==================================
+
+        if row_fields:
+            x = data[row_fields].astype(str).agg(" - ".join, axis=1)
+        else:
+            x = data.iloc[:, 0].astype(str)
+
+        y = pd.to_numeric(
+            data[value_column],
+            errors="coerce"
+        ).fillna(0)
 
         print("\n===== PIVOT DATA =====")
         print(data)
@@ -459,6 +504,30 @@ class PivotChart:
                     fontsize=9,
                     fontweight="bold"
                 )
+
+        # ==========================
+        # TREEMAP
+        # ==========================
+
+        elif chart_type == "Treemap":
+
+            squarify.plot(
+                sizes=y,
+                label=[
+                    f"{label}\n{format_number(value)}"
+                    for label, value in zip(x, y)
+                ],
+                color=COLORS[:len(y)],
+                alpha=0.85,
+                pad=True,
+                text_kwargs={
+                    "fontsize": 10,
+                    "fontweight": "bold"
+                }
+            )
+
+            plt.axis("off")
+
         # ==========================
         # PIE CHART
         # ==========================

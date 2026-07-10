@@ -347,6 +347,8 @@ class PivotWindow(ctk.CTkToplevel):
                 "Scatter",
                 "Histogram",
                 "Box Plot",
+                "Heatmap",
+                "Treemap",
             ],
             width=180
         )
