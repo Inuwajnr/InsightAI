@@ -12,6 +12,7 @@ from core.merge_engine import MergeEngine
 from ui.components.pivot_window import PivotWindow
 from ui.components.correlation_window import CorrelationWindow
 import pandas as pd
+from data.kpi_analyzer import KPIAnalyzer
 from data.pivot import PivotEngine
 
 from ui.sidebar import Sidebar
@@ -47,6 +48,7 @@ class InsightAIApp(ctk.CTk):
         self.profile = DatasetProfile()
         self.merge_engine = MergeEngine()
         self.pivot_engine = PivotEngine()
+        self.kpi_analyzer = KPIAnalyzer()
         
 
         # =====================================
@@ -201,6 +203,10 @@ class InsightAIApp(ctk.CTk):
             print(name)
 
         print("==============================\n")
+
+        business_kpis = self.kpi_analyzer.generate(self.current_df)
+
+        print(business_kpis)
 
         # =====================================
         # Dataset Summary
@@ -747,6 +753,14 @@ Memory Usage: {summary['memory']} KB
         self.dashboard.profile_panel.update_profile(
             profile
         )
+        print("\n===== MERGED DATASET =====")
+        print(self.current_df.head())
+        print(self.current_df.shape)
+
+        profile = self.profile.generate_profile(self.current_df)
+
+        print("\n===== PROFILE =====")
+        print(profile)
 
         quality = self.quality.evaluate(
             self.current_df

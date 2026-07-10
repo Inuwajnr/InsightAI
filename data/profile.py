@@ -20,23 +20,34 @@ class DatasetProfile:
 
         profile = {
 
+            # Basic information
             "rows": len(df),
-
             "columns": len(df.columns),
+            "missing_values": int(df.isna().sum().sum()),
+            "duplicate_rows": int(df.duplicated().sum()),
+            "memory": round(memory, 2),
 
-            "numeric": len(numeric_cols),
+            # Column counts
+            "numeric_columns": len(numeric_cols),
+            "categorical_columns": len(categorical_cols),
 
-            "categorical": len(categorical_cols),
+            # Column names
+            "column_names": list(df.columns),
+            "numeric_column_names": numeric_cols,
+            "categorical_column_names": categorical_cols,
 
-            "missing": int(
-                df.isna().sum().sum()
-            ),
+            # Data types
+            "data_types": {
+                col: str(dtype)
+                for col, dtype in df.dtypes.items()
+            },
 
-            "duplicates": int(
-                df.duplicated().sum()
-            ),
-
-            "memory": round(memory, 2)
+            # Missing values by column
+            "missing_by_column": (
+                df.isna()
+                .sum()
+                .to_dict()
+            )
 
         }
 
