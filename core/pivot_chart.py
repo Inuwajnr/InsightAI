@@ -64,43 +64,70 @@ class PivotChart:
             plt.tight_layout()
             plt.show()
             return
+        
+        # ==========================
+        # BOX PLOT
+        # ==========================
+
+        elif chart_type == "Box Plot":
+
+            values = pd.to_numeric(
+                original_df[value_column],
+                errors="coerce"
+            ).dropna()
+
+            self.fig = plt.figure(figsize=(8, 6))
+
+            plt.boxplot(
+                values,
+                patch_artist=True,
+                boxprops=dict(facecolor=COLORS[0], color="black"),
+                medianprops=dict(color="red", linewidth=2),
+                whiskerprops=dict(color="black"),
+                capprops=dict(color="black"),
+                flierprops=dict(
+                    marker="o",
+                    markerfacecolor="red",
+                    markersize=6,
+                    linestyle="none"
+                )
+            )
+
+            plt.title(
+                f"Box Plot of {value_column}",
+                fontsize=16,
+                fontweight="bold"
+            )
+
+            plt.ylabel(value_column)
+
+            plt.grid(
+                axis="y",
+                linestyle="--",
+                alpha=0.4
+            )
+
+            plt.tight_layout()
+            plt.show()
+            return
 
         # --------------------------
         # Everything below is for pivot charts
         # --------------------------
 
-        if chart_type not in [
-            "Histogram",
-            "Box Plot",
-            "Heatmap",
-            "Bubble",
-            "Pareto",
-            "Waterfall"
-        ]:
+        data = pivot_df.reset_index()
 
-            data = pivot_df.reset_index()
+        print("\n===== PIVOT DATA =====")
+        print(data)
 
-            print("\n===== PIVOT DATA =====")
-            print(data)
+        print("\n===== COLUMNS =====")
+        print(data.columns.tolist())
 
-            print("\n===== COLUMNS =====")
-            print(data.columns.tolist())
+        print("\nSelected Value Column:")
+        print(value_column)
 
-            print("\nSelected Value Column:")
-            print(value_column)
-
-            print("\nSeries being plotted:")
-            print(data[value_column])
-
-        if row_fields:
-            x = data[row_fields].astype(str).agg(" - ".join, axis=1)
-        else:
-            x = data.iloc[:, 0].astype(str)
-        y = pd.to_numeric(
-                data[value_column],
-                errors="coerce"
-            ).fillna(0)
-        plt.figure(figsize=(10, 6))
+        print("\nSeries being plotted:")
+        print(data[value_column])
 
         # ==========================
         # BAR CHART (Horizontal)
@@ -468,46 +495,6 @@ class PivotChart:
             )
 
             plt.title(value_column)
-            plt.tight_layout()
-            plt.show()
-            return
-        
-        # ==========================
-        # HISTOGRAM
-        # ==========================
-
-        elif chart_type == "Histogram":
-
-            values = pd.to_numeric(
-                original_df[value_column],
-                errors="coerce"
-            ).dropna()
-
-            self.fig = plt.figure(figsize=(10, 6))
-
-            plt.hist(
-                values,
-                bins="auto",
-                color=COLORS[0],
-                edgecolor="black",
-                alpha=0.85
-            )
-
-            plt.title(
-                f"Distribution of {value_column}",
-                fontsize=16,
-                fontweight="bold"
-            )
-
-            plt.xlabel(value_column)
-            plt.ylabel("Frequency")
-
-            plt.grid(
-                axis="y",
-                linestyle="--",
-                alpha=0.4
-            )
-
             plt.tight_layout()
             plt.show()
             return

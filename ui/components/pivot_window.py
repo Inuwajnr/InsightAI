@@ -346,6 +346,7 @@ class PivotWindow(ctk.CTkToplevel):
                 "Doughnut",
                 "Scatter",
                 "Histogram",
+                "Box Plot",
             ],
             width=180
         )
@@ -651,7 +652,9 @@ class PivotWindow(ctk.CTkToplevel):
             "Histogram",
             "Box Plot",
             "Heatmap",
-            "Bubble"
+            "Bubble",
+            "Pareto",
+            "Waterfall",
         ]:
             value_column = self.analysis_field_dropdown.get()
         else:
