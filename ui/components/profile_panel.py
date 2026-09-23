@@ -7,7 +7,8 @@ class ProfilePanel(ctk.CTkFrame):
 
         super().__init__(
             master,
-            width=280,
+            width=340,
+            height=420,
             corner_radius=12
         )
 
@@ -25,8 +26,8 @@ class ProfilePanel(ctk.CTkFrame):
 
         self.info_box = ctk.CTkTextbox(
             self,
-            width=260,
-            height=550
+            width=320,
+            height=300
         )
 
         self.info_box.pack(
@@ -43,71 +44,92 @@ class ProfilePanel(ctk.CTkFrame):
         self.info_box.configure(state="normal")
         self.info_box.delete("1.0", "end")
 
-        print("\n===== PROFILE RECEIVED =====")
-        print(profile)
-        print("Numeric Columns:", profile.get("numeric_columns"))
-        print("Numeric Names:", profile.get("numeric_column_names"))
-        print("============================")
+        memory = profile.get("memory", 0)
+
+        if memory >= 1024:
+            memory_text = f"{memory / 1024:.2f} GB"
+        else:
+            memory_text = f"{memory:.2f} MB"
 
         text = f"""
-📊 DATASET SUMMARY
-────────────────────────
+    📊 DATASET SUMMARY
+    ────────────────────────
 
-Rows:
-{profile.get("rows", 0)}
+    Rows: {profile.get("rows", 0):,}
 
-Columns:
-{profile.get("columns", 0)}
+    Columns: {profile.get("columns", 0)}
 
-Numeric Columns:
-{profile.get("numeric_columns", 0)}
+    Numeric Columns: {profile.get("numeric_columns", 0)}
 
-Categorical Columns:
-{profile.get("categorical_columns", 0)}
+    Categorical Columns: {profile.get("categorical_columns", 0)}
 
-Duplicate Rows:
-{profile.get("duplicate_rows", 0)}
+    Missing Values: {profile.get("missing_values", 0)}
 
-Missing Values:
-{profile.get("missing_values", 0)}
+    Duplicate Rows: {profile.get("duplicate_rows", 0)}
 
-Memory Usage:
-{profile.get("memory", 0)} KB
+    Memory Usage: {memory_text}
 
-────────────────────────
-NUMERIC COLUMNS
-────────────────────────
-"""
+    ────────────────────────
+    NUMERIC COLUMNS
+    ────────────────────────
+    """
 
-        numeric_cols = profile.get("numeric_column_names", [])
+        numeric_cols = profile.get(
+            "numeric_column_names",
+            []
+        )
 
         if numeric_cols:
-            for col in numeric_cols:
+
+            for col in numeric_cols[:10]:
+
                 text += f"\n• {col}"
+
+            if len(numeric_cols) > 10:
+
+                text += (
+                    f"\n\n+{len(numeric_cols) - 10} more..."
+                )
+
         else:
+
             text += "\nNone"
 
-        text += "\n\n────────────────────────\n"
-        text += "CATEGORICAL COLUMNS\n"
-        text += "────────────────────────\n"
+        text += """
 
-        categorical_cols = profile.get("categorical_column_names", [])
+
+
+    ────────────────────────
+    CATEGORICAL COLUMNS
+    ────────────────────────
+    """
+
+        categorical_cols = profile.get(
+            "categorical_column_names",
+            []
+        )
 
         if categorical_cols:
-            for col in categorical_cols:
+
+            for col in categorical_cols[:10]:
+
                 text += f"\n• {col}"
+
+            if len(categorical_cols) > 10:
+
+                text += (
+                    f"\n\n+{len(categorical_cols) - 10} more..."
+                )
+
         else:
+
             text += "\nNone"
 
-        text += "\n\n────────────────────────\n"
-        text += "DATA TYPES\n"
-        text += "────────────────────────\n"
+        self.info_box.insert(
+            "1.0",
+            text
+        )
 
-        data_types = profile.get("data_types", {})
-
-        for col, dtype in data_types.items():
-            text += f"\n{col}: {dtype}"
-
-        self.info_box.insert("1.0", text)
-
-        self.info_box.configure(state="disabled")
+        self.info_box.configure(
+            state="disabled"
+        )

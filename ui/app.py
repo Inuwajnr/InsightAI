@@ -11,10 +11,12 @@ from ui.components.merge_panel import MergePanel
 from core.merge_engine import MergeEngine
 from ui.components.pivot_window import PivotWindow
 from ui.components.correlation_window import CorrelationWindow
+from ui.components.data_analysis_panel import DataAnalysisPanel
 import pandas as pd
-from data.kpi_analyzer import KPIAnalyzer
+from data.smart_kpi import SmartKPIEngine
 from data.pivot import PivotEngine
-
+from ui.components.statistics_panel import StatisticsPanel
+from analysis import DataAnalysisEngine
 from ui.sidebar import Sidebar
 from ui.pages.dashboard import Dashboard
 
@@ -48,7 +50,8 @@ class InsightAIApp(ctk.CTk):
         self.profile = DatasetProfile()
         self.merge_engine = MergeEngine()
         self.pivot_engine = PivotEngine()
-        self.kpi_analyzer = KPIAnalyzer()
+        self.smart_kpi = SmartKPIEngine()
+        self.analysis = DataAnalysisEngine()
         
 
         # =====================================
@@ -197,74 +200,22 @@ class InsightAIApp(ctk.CTk):
 
         self.datasets[dataset_name] = self.current_df
 
+        self.current_dataset_name = dataset_name
+
+
         print("\n========== DATASETS ==========")
 
         for name in self.datasets:
             print(name)
 
-        print("==============================\n")
-
-        business_kpis = self.kpi_analyzer.generate(self.current_df)
-
-        print(business_kpis)
-
         # =====================================
         # Dataset Summary
         # =====================================
 
-        summary = self.analyzer.get_summary(
-            self.current_df
-        )
-
-        # =====================================
-        # Update KPI Cards
-        # =====================================
-
-        self.dashboard.rows_card.update_value(
-            summary["rows"]
-        )
-
-        self.dashboard.columns_card.update_value(
-            summary["columns"]
-        )
-
-        self.dashboard.missing_card.update_value(
-            summary["missing_values"]
-        )
-
-        self.dashboard.memory_card.update_value(
-            f"{summary['memory']} KB"
-        )
-
-        # =====================================
-        # Load Data Grid
-        # =====================================
-
-        self.dashboard.data_grid.load_dataframe(
-            self.current_df
-        )
-
-        # =====================================
-        # Update Dataset Profile
-        # =====================================
-
-        profile = self.analyzer.get_dataset_profile(
-            self.current_df
-        )
-
-        self.dashboard.profile_panel.update_profile(
-            profile
-        )
-        # =====================================
-        # Data Quality
-        # =====================================
-
-        quality = self.quality.evaluate(
-            self.current_df
-        )
-
-        self.dashboard.quality_panel.update_quality(
-            quality
+        self.refresh_dashboard()
+        
+        self.dashboard.status_bar.set_status(
+            "Dataset Loaded Successfully"
         )
 
         # =====================================
@@ -501,7 +452,11 @@ class InsightAIApp(ctk.CTk):
                 "Export Error",
                 str(e)
             )
+    # ======================================================
+    # Refresh Dashboard
+    # ======================================================
 
+    
     # ======================================================
     # Clean Dataset
     # ======================================================
@@ -514,64 +469,53 @@ class InsightAIApp(ctk.CTk):
                 "No Dataset",
                 "Please upload a dataset first."
             )
-
             return
 
         try:
+
+            # --------------------------------
+            # Clean Dataset
+            # --------------------------------
 
             self.current_df, report = self.cleaner.clean_dataset(
                 self.current_df
             )
 
-            summary = self.analyzer.get_summary(
-                self.current_df
-            )
+            # Update the currently selected dataset
+            if hasattr(self, "current_dataset_name"):
+                self.datasets[self.current_dataset_name] = self.current_df
 
-            # -----------------------------
-            # Update KPI Cards
-            # -----------------------------
+            # --------------------------------
+            # Refresh Entire Dashboard
+            # --------------------------------
 
-            self.dashboard.rows_card.update_value(
-                summary["rows"]
-            )
+            self.refresh_dashboard()
 
-            self.dashboard.columns_card.update_value(
-                summary["columns"]
-            )
-
-            self.dashboard.missing_card.update_value(
-                summary["missing_values"]
-            )
-
-            self.dashboard.memory_card.update_value(
-                f"{summary['memory']} KB"
-            )
-
-            # -----------------------------
-            # Refresh Grid
-            # -----------------------------
-
-            self.dashboard.data_grid.load_dataframe(
-                self.current_df
-            )
+            # --------------------------------
+            # Success Status
+            # --------------------------------
 
             self.dashboard.status_bar.set_status(
                 "Dataset Cleaned Successfully"
             )
 
+            # --------------------------------
+            # Cleaning Report
+            # --------------------------------
+
             messagebox.showinfo(
                 "Cleaning Complete",
                 f"""
-Rows Before: {report['original_rows']}
+    Rows Before: {report['original_rows']}
 
-Rows After: {report['final_rows']}
+    Rows After: {report['final_rows']}
 
-Duplicates Removed: {report['duplicates_removed']}
+    Duplicates Removed: {report['duplicates_removed']}
 
-Missing Values Before: {report['missing_before']}
+    Missing Values Before: {report['missing_before']}
 
-Missing Values After: {report['missing_after']}
-"""
+    Missing Values After: {report['missing_after']}
+    """
             )
 
         except Exception as e:
@@ -581,22 +525,12 @@ Missing Values After: {report['missing_after']}
                 str(e)
             )
 
-            profile = self.profile.generate_profile(
-                self.current_df
-            )
-            self.dashboard.profile_panel.update_profile(
-                profile
-            )
-
-            quality = self.quality.evaluate(self.current_df)
-            self.dashboard.quality_panel.update_quality(quality)
-
     # ======================================================
     # Dataset Statistics
     # ======================================================
 
     def show_statistics(self):
-        
+
         if self.current_df is None:
 
             messagebox.showwarning(
@@ -612,19 +546,32 @@ Missing Values After: {report['missing_after']}
                 self.current_df
             )
 
-            messagebox.showinfo(
-                "Dataset Statistics",
-                f"""
-Rows: {summary['rows']}
+            descriptive = self.current_df.describe(include="all")
 
-Columns: {summary['columns']}
+            missing = self.statistics.missing_values(
+                self.current_df
+            )
 
-Missing Values: {summary['missing']}
+            data_types = self.statistics.data_types(
+                self.current_df
+            )
 
-Duplicate Rows: {summary['duplicates']}
+            numeric_columns = self.statistics.numeric_columns(
+                self.current_df
+            )
 
-Memory Usage: {summary['memory']} KB
-"""
+            categorical_columns = self.statistics.categorical_columns(
+                self.current_df
+            )
+
+            self.statistics_window = StatisticsPanel(
+                self,
+                summary,
+                descriptive,
+                missing,
+                data_types,
+                numeric_columns,
+                categorical_columns
             )
 
             self.dashboard.status_bar.set_status(
@@ -637,8 +584,6 @@ Memory Usage: {summary['memory']} KB
                 "Statistics Error",
                 str(e)
             )
-
-
     # ======================================================
     # Merge Window
     # ======================================================
@@ -719,7 +664,13 @@ Memory Usage: {summary['memory']} KB
 
         self.current_df = merged_df
 
+        self.current_dataset_name = dataset_name
+
         self.refresh_dashboard()
+        
+        self.dashboard.status_bar.set_status(
+            "Datasets Merged Successfully"
+        )
 
         panel.destroy()
 
@@ -728,6 +679,20 @@ Memory Usage: {summary['memory']} KB
 
         summary = self.analyzer.get_summary(
             self.current_df
+        )
+        # -----------------------------
+        # Smart KPI cards
+        # -----------------------------
+
+        kpis = self.smart_kpi.generate(
+            self.current_df
+        )
+
+        print("\n===== GENERATED KPIs =====")
+        print(kpis)
+
+        self.dashboard.smart_kpi_panel.update_cards(
+            kpis
         )
 
         self.dashboard.rows_card.update_value(summary["rows"])
@@ -786,6 +751,10 @@ Memory Usage: {summary['memory']} KB
             "Datasets merged successfully."
         )
 
+    # ======================================================
+    # Correlation Analysis
+    # ======================================================
+
     def show_correlation(self):
 
         if self.current_df is None:
@@ -794,24 +763,69 @@ Memory Usage: {summary['memory']} KB
                 "No Dataset",
                 "Please upload a dataset first."
             )
+
             return
 
-        corr = self.correlation.get_correlation_matrix(
-            self.current_df
-        )
+        try:
 
-        if corr is None:
+            corr = self.statistics.correlation_matrix(
+                self.current_df
+            )
 
+            if corr is None or corr.shape[1] < 2:
+
+                messagebox.showwarning(
+                    "Correlation",
+                    "Dataset requires at least two numeric columns."
+                )
+
+                return
+
+            CorrelationWindow(
+                self,
+                corr
+            )
+
+            self.dashboard.status_bar.set_status(
+                "Correlation Analysis Generated"
+            )
+
+        except Exception as e:
+
+            messagebox.showerror(
+                "Correlation Error",
+                str(e)
+            )
+
+    # ======================================================
+    # Data Analysis
+    # ======================================================
+
+    def show_data_analysis(self):
+
+        if self.current_df is None:
             messagebox.showwarning(
-                "Correlation",
-                "Dataset requires at least two numeric columns."
+                "No Dataset",
+                "Please upload a dataset first."
             )
             return
 
-        CorrelationWindow(
-            self,
-            corr
-        )
+        try:
+
+            self.analysis_window = DataAnalysisPanel(
+                self
+            )
+
+            self.dashboard.status_bar.set_status(
+                "Data Analysis Opened"
+            )
+
+        except Exception as e:
+
+            messagebox.showerror(
+                "Data Analysis Error",
+                str(e)
+            )
     # ======================================================
     # Run Application
     # ======================================================

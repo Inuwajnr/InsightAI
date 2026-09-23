@@ -112,11 +112,20 @@ class ChartGenerator:
         # Many categories -> Horizontal Bar
         if len(grouped) > 8:
 
+            labels = [
+                str(x)[:25] + "..."
+                if len(str(x)) > 12
+                else str(x)
+                for x in grouped.index
+            ]
+
+            num_categories = len(grouped)
+
             bars = ax.barh(
-                grouped.index.astype(str),
+                labels,
                 grouped.values,
                 color="#3B82F6",
-                height=0.65
+                height=0.6
             )
 
             ax.invert_yaxis()
@@ -146,10 +155,13 @@ class ChartGenerator:
 
             ax.bar_label(
                 bars,
-                fmt="%.0f",
-                padding=5,
-                fontsize=9,
-                fontweight='bold'
+                labels = [
+                    f"{v:,.0f}"
+                    for v in grouped.values
+                ],
+                padding=3,
+                fontsize=8,
+                fontweight="bold"
             )
 
         # Few categories -> Vertical Bar
@@ -176,14 +188,15 @@ class ChartGenerator:
 
             ax.set_title(
                 f"Total {y_col} by {x_col}",
-                fontsize=18,
+                fontsize=14,
                 fontweight="bold",
-                pad=20
+                pad=10
             )
 
             ax.tick_params(
                 axis="x",
-                rotation=35
+                rotation=30,
+                labelsize=10
             )
 
             ax.yaxis.set_major_formatter(
@@ -192,20 +205,37 @@ class ChartGenerator:
 
             ax.bar_label(
                 bars,
-                fmt="%.0f",
-                padding=3,
-                fontsize=9,
+                labels = [
+                    f"{v:,.0f}"
+                    for v in grouped.values
+                ],
+                padding=8,
+                fontsize=8,
                 fontweight= 'bold'
             )
 
-        ax.grid(
-            axis="y",
-            linestyle="--",
-            alpha=0.3
-        )
+        if len(grouped) >= 8:
+
+            ax.grid(
+                axis="x",
+                linestyle="--",
+                alpha=0.3
+            )
+
+        else:
+
+            ax.grid(
+                axis="y",
+                linestyle="--",
+                alpha=0.3
+            )
 
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
+
+        ax.figure.subplots_adjust(
+                left=0.45
+            )
 
         ax.figure.tight_layout()
 
@@ -214,16 +244,31 @@ class ChartGenerator:
     # ==========================================
 
     def column_chart(
-            self,ax,df,x_col,y_col,top_n="10"):
-        
-        
+        self,
+        ax,
+        df,
+        x_col,
+        y_col,
+        top_n="10"
+    ):
+
         ax.clear()
 
-        if top_n != "All":
-            grouped = grouped.head(int(top_n))
+        grouped = self._prepare_grouped_data(
+            df,
+            x_col,
+            y_col
+        )
 
         if grouped.empty:
-            raise ValueError("No data available.")
+            raise ValueError(
+                "No data available."
+            )
+
+        if top_n != "All":
+            grouped = grouped.head(
+                int(top_n)
+            )
 
         bars = ax.bar(
             grouped.index.astype(str),
@@ -235,7 +280,8 @@ class ChartGenerator:
         ax.set_title(
             f"Total {y_col} by {x_col}",
             fontsize=18,
-            fontweight="bold"
+            fontweight="bold",
+            pad=20
         )
 
         ax.set_xlabel(
@@ -256,15 +302,20 @@ class ChartGenerator:
         )
 
         ax.yaxis.set_major_formatter(
-            FuncFormatter(lambda x, p: f"{x:,.0f}")
+            FuncFormatter(
+                lambda x, p: f"{x:,.0f}"
+            )
         )
 
         ax.bar_label(
             bars,
-            fmt="%.0f",
-            padding=3,
-            fontsize=9,
-            fontweight='bold'
+            labels = [
+                f"{v:,.0f}"
+                for v in grouped.values
+            ],
+            padding=8,
+            fontsize=8,
+            fontweight="bold"
         )
 
         ax.grid(

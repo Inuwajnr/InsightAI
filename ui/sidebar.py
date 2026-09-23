@@ -127,7 +127,8 @@ class Sidebar(ctk.CTkFrame):
 
         self.analysis_btn = ctk.CTkButton(
             self,
-            text="📊 Data Analysis"
+            text="📊 Data Analysis",
+            command=master.show_data_analysis
         )
 
         self.analysis_btn.pack(

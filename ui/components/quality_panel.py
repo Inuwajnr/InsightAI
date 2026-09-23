@@ -7,7 +7,8 @@ class QualityPanel(ctk.CTkFrame):
 
         super().__init__(
             master,
-            width=320,
+            width=340,
+            height=150,
             corner_radius=12
         )
 

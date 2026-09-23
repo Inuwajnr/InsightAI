@@ -7,6 +7,7 @@ from ui.components.data_grid import DataGrid
 from ui.components.status_bar import StatusBar
 from ui.components.profile_panel import ProfilePanel
 from ui.components.quality_panel import QualityPanel
+from ui.components.smart_kpi_panel import SmartKPIPanel
 
 
 class Dashboard(ctk.CTkFrame):
@@ -127,6 +128,20 @@ class Dashboard(ctk.CTkFrame):
         )
 
         # ====================================
+        # Smart KPI Panel
+        # ====================================
+
+        self.smart_kpi_panel = SmartKPIPanel(
+            self
+        )
+
+        self.smart_kpi_panel.pack(
+            fill="x",
+            padx=10,
+            pady=(0, 10)
+        )
+
+        # ====================================
         # Chart Controls
         # ====================================
 
@@ -149,16 +164,31 @@ class Dashboard(ctk.CTkFrame):
             pady=(0, 10)
         )
 
+        visual_frame.grid_columnconfigure(
+            0,
+            weight=7
+        )
+
+        visual_frame.grid_columnconfigure(
+            1,
+            weight=3
+        )
+
+        visual_frame.grid_rowconfigure(
+            0,
+            weight=1
+        )
+
         # -----------------------------
         # Chart (Left)
         # -----------------------------
 
         self.chart_view = ChartView(visual_frame)
 
-        self.chart_view.pack(
-            side="left",
-            fill="both",
-            expand=True,
+        self.chart_view.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
             padx=(0, 10)
         )
 
@@ -169,14 +199,24 @@ class Dashboard(ctk.CTkFrame):
         right_panel = ctk.CTkFrame(
             visual_frame,
             fg_color="transparent",
-            width=320
+            width=350
         )
 
-        right_panel.pack(
-            side="right",
-            fill="y"
+        right_panel.grid(
+            row=0,
+            column=1,
+            sticky="nsew"
         )
 
+        right_panel.grid_rowconfigure(
+            0,
+            weight=3
+        )
+
+        right_panel.grid_rowconfigure(
+            1,
+            weight=2
+        )
         # -----------------------------
         # Dataset Profile
         # -----------------------------
@@ -185,9 +225,10 @@ class Dashboard(ctk.CTkFrame):
             right_panel
         )
 
-        self.profile_panel.pack(
-            fill="both",
-            expand=True,
+        self.profile_panel.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
             pady=(0, 10)
         )
 
@@ -199,9 +240,10 @@ class Dashboard(ctk.CTkFrame):
             right_panel
         )
 
-        self.quality_panel.pack(
-            fill="both",
-            expand=True
+        self.quality_panel.grid(
+            row=1,
+            column=0,
+            sticky="nsew"
         )
 
         # ====================================
