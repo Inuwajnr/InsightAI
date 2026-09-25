@@ -143,7 +143,8 @@ class Sidebar(ctk.CTkFrame):
 
         self.docs_btn = ctk.CTkButton(
             self,
-            text="📄 Document Assistant"
+            text="📄 Document Assistant",
+            command=master.show_document_assistant
         )
 
         self.docs_btn.pack(
@@ -158,7 +159,8 @@ class Sidebar(ctk.CTkFrame):
 
         self.chat_btn = ctk.CTkButton(
             self,
-            text="🤖 AI Chat"
+            text="🤖 AI Chat",
+            command=master.show_ai_chat
         )
 
         self.chat_btn.pack(

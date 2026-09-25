@@ -16,8 +16,10 @@ import pandas as pd
 from data.smart_kpi import SmartKPIEngine
 from data.pivot import PivotEngine
 from ui.components.statistics_panel import StatisticsPanel
+from ui.components.document_assistant_panel import DocumentAssistantPanel
 from analysis import DataAnalysisEngine
 from ui.sidebar import Sidebar
+from ui.components.ai_chat_panel import AIChatPanel
 from ui.pages.dashboard import Dashboard
 
 
@@ -826,6 +828,19 @@ class InsightAIApp(ctk.CTk):
                 "Data Analysis Error",
                 str(e)
             )
+
+    def show_document_assistant(self):
+        self.document_assistant_window = DocumentAssistantPanel(self)
+        self.dashboard.status_bar.set_status(
+            "Document Assistant Opened"
+        )
+        
+
+    def show_ai_chat(self):
+        self.ai_chat_window = AIChatPanel(self)
+        self.dashboard.status_bar.set_status(
+            "AI Chat Opened"
+        )
     # ======================================================
     # Run Application
     # ======================================================

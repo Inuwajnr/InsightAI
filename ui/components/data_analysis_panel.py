@@ -1,6 +1,9 @@
+from tkinter import messagebox
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk
+import pandas as pd
+
 
 class DataAnalysisPanel(ctk.CTkToplevel):
 
@@ -8,8 +11,12 @@ class DataAnalysisPanel(ctk.CTkToplevel):
         super().__init__(master)
 
         self.title("InsightAI - Data Analysis")
-        self.geometry("1100x700")
-        self.minsize(900, 600)
+        self.geometry("1200x760")
+        self.minsize(1000, 650)
+
+        self.transient(master)
+
+        self._configure_treeview_style()
 
         # ==================================================
         # Header
@@ -38,7 +45,7 @@ class DataAnalysisPanel(ctk.CTkToplevel):
 
         subtitle = ctk.CTkLabel(
             header,
-            text="Explore, compare and analyze your dataset.",
+            text="Explore, compare and analyze your dataset in one workspace.",
             font=("Arial", 13)
         )
         subtitle.pack(
@@ -48,753 +55,1708 @@ class DataAnalysisPanel(ctk.CTkToplevel):
         )
 
         # ==================================================
-        # Main Content
+        # Main Analysis Workspace
         # ==================================================
 
-        content = ctk.CTkScrollableFrame(
+        self.tabview = ctk.CTkTabview(
             self,
             corner_radius=12
         )
-
-        content.pack(
+        self.tabview.pack(
             fill="both",
             expand=True,
             padx=15,
             pady=(0, 15)
         )
 
-        # ==================================================
-        # Analysis Options
-        # ==================================================
+        self.tabview.add("🔢 Numeric Summary")
+        self.tabview.add("📊 Group Analysis")
+        self.tabview.add("🏆 Top / Bottom")
+        self.tabview.add("📋 Category Frequency")
+        self.tabview.add("⚠️ Outlier Detection")
 
-        options_title = ctk.CTkLabel(
-            content,
-            text="Analysis Tools",
-            font=("Arial", 19, "bold")
-        )
+        # Build all analysis sections inside the same page
+        self._build_numeric_tab()
+        self._build_group_tab()
+        self._build_top_bottom_tab()
+        self._build_frequency_tab()
+        self._build_outlier_tab()
 
-        options_title.pack(
-            anchor="w",
-            padx=10,
-            pady=(10, 15)
-        )
-
-        # ==================================================
-        # Numeric Summary
-        # ==================================================
-
-        self.create_analysis_card(
-            content,
-            "🔢 Numeric Summary",
-            "Analyze minimum, maximum, median and standard deviation of numeric columns.",
-            "numeric"
-        )
-
-        # ==================================================
-        # Group Analysis
-        # ==================================================
-
-        self.create_analysis_card(
-            content,
-            "📊 Group Analysis",
-            "Compare numerical values across categories.",
-            "group"
-        )
-
-        # ==================================================
-        # Top / Bottom Analysis
-        # ==================================================
-
-        self.create_analysis_card(
-            content,
-            "🏆 Top / Bottom Analysis",
-            "Find the highest or lowest values in a numerical column.",
-            "top_bottom"
-        )
-
-        # ==================================================
-        # Category Frequency
-        # ==================================================
-
-        self.create_analysis_card(
-            content,
-            "📋 Category Frequency",
-            "Count how frequently each category appears.",
-            "frequency"
-        )
-
-        # ==================================================
-        # Outlier Detection
-        # ==================================================
-
-        self.create_analysis_card(
-            content,
-            "⚠️ Outlier Detection",
-            "Identify unusually high or low numerical values.",
-            "outliers"
-        )
+        # Open with Numeric Summary selected
+        self.tabview.set("🔢 Numeric Summary")
 
     # ======================================================
-    # Analysis Card
+    # Shared Helpers
     # ======================================================
 
-    def create_analysis_card(
-        self,
-        master,
-        title,
-        description,
-        analysis_type
-    ):
+    def _configure_treeview_style(self):
+        style = ttk.Style()
 
-        card = ctk.CTkFrame(
-            master,
-            corner_radius=12
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        style.configure(
+            "Treeview",
+            background="#1E1E1E",
+            foreground="white",
+            fieldbackground="#1E1E1E",
+            rowheight=30,
+            font=("Arial", 10)
         )
 
-        card.pack(
-            fill="x",
-            padx=10,
-            pady=8
+        style.configure(
+            "Treeview.Heading",
+            background="#343434",
+            foreground="white",
+            font=("Arial", 10, "bold")
         )
 
+        style.map(
+            "Treeview",
+            background=[
+                ("selected", "#3B82F6")
+            ],
+            foreground=[
+                ("selected", "white")
+            ]
+        )
+
+    def _create_title(self, parent, title, description):
         title_label = ctk.CTkLabel(
-            card,
+            parent,
             text=title,
-            font=("Arial", 17, "bold")
+            font=("Arial", 21, "bold")
         )
-
         title_label.pack(
             anchor="w",
             padx=20,
-            pady=(15, 3)
+            pady=(20, 3)
         )
 
         description_label = ctk.CTkLabel(
-            card,
+            parent,
             text=description,
-            font=("Arial", 12),
-            wraplength=750,
-            justify="left"
+            font=("Arial", 12)
         )
-
         description_label.pack(
             anchor="w",
-            padx=20,
-            pady=(0, 12)
-        )
-
-        button = ctk.CTkButton(
-            card,
-            text="Open Analysis",
-            width=150,
-            command=lambda: self.open_analysis(analysis_type)
-        )
-
-        button.pack(
-            anchor="e",
             padx=20,
             pady=(0, 15)
         )
 
-    # ======================================================
-    # Open Analysis
-    # ======================================================
+    def _create_table(self, parent):
+        result_frame = ctk.CTkFrame(
+            parent,
+            corner_radius=10
+        )
+        result_frame.pack(
+            fill="both",
+            expand=True,
+            padx=20,
+            pady=(0, 20)
+        )
 
-    def open_analysis(self, analysis_type):
+        tree_frame = tk.Frame(
+            result_frame,
+            bg="#1E1E1E"
+        )
+        tree_frame.pack(
+            fill="both",
+            expand=True,
+            padx=10,
+            pady=10
+        )
 
-        if analysis_type == "numeric":
+        tree = ttk.Treeview(
+            tree_frame,
+            show="headings"
+        )
 
-            self.show_numeric_summary()
+        vertical_scrollbar = ttk.Scrollbar(
+            tree_frame,
+            orient="vertical",
+            command=tree.yview
+        )
+        horizontal_scrollbar = ttk.Scrollbar(
+            tree_frame,
+            orient="horizontal",
+            command=tree.xview
+        )
 
-        elif analysis_type == "group":
+        vertical_scrollbar.pack(
+            side="right",
+            fill="y"
+        )
+        horizontal_scrollbar.pack(
+            side="bottom",
+            fill="x"
+        )
 
-            self.show_group_analysis()
+        tree.configure(
+            yscrollcommand=vertical_scrollbar.set,
+            xscrollcommand=horizontal_scrollbar.set
+        )
 
-        else:
+        tree.pack(
+            side="left",
+            fill="both",
+            expand=True
+        )
 
-            print(
-                f"Analysis not implemented yet: {analysis_type}"
+        return tree
+
+    def _display_dataframe(self, tree, dataframe):
+        tree.delete(*tree.get_children())
+
+        if dataframe is None or dataframe.empty:
+            tree["columns"] = ["Message"]
+            tree.heading("Message", text="Message")
+            tree.column(
+                "Message",
+                width=500,
+                anchor="center"
+            )
+            tree.insert(
+                "",
+                "end",
+                values=("No results found.",)
+            )
+            return
+
+        columns = list(dataframe.columns)
+        tree["columns"] = columns
+
+        for column in columns:
+            tree.heading(
+                column,
+                text=str(column)
+            )
+            tree.column(
+                column,
+                width=150,
+                minwidth=100,
+                anchor="center"
             )
 
+        for _, row in dataframe.iterrows():
+            values = []
+
+            for value in row:
+                if value is None:
+                    value = ""
+                elif isinstance(value, float):
+                    value = f"{value:,.2f}"
+                else:
+                    value = str(value)
+
+                values.append(value)
+
+            tree.insert(
+                "",
+                "end",
+                values=values
+            )
+
+    def _get_dataframe(self):
+        return self.master.current_df
 
     # ======================================================
     # Numeric Summary
     # ======================================================
 
-    def show_numeric_summary(self):
+    def _build_numeric_tab(self):
 
-        try:
+        tab = self.tabview.tab("🔢 Numeric Summary")
 
-            dataframe = self.master.analysis.numeric_summary(
-                self.master.current_df
+        self._create_title(
+            tab,
+            "🔢 Numeric Summary",
+            "Analyze count, missing values, sum, minimum, maximum, median and standard deviation of numeric columns."
+        )
+
+        df = self._get_dataframe()
+
+        # --------------------------------------------------
+        # Get numeric columns
+        # --------------------------------------------------
+
+        numeric_columns = list(
+            df.select_dtypes(include="number").columns
+        )
+
+        if not numeric_columns:
+
+            ctk.CTkLabel(
+                tab,
+                text="No numeric columns were found in the dataset.",
+                font=("Arial", 14)
+            ).pack(
+                pady=30
             )
 
-            if dataframe.empty:
+            return
 
-                ctk.CTkMessagebox if False else None
+        # --------------------------------------------------
+        # Calculate Numeric Summary
+        # --------------------------------------------------
 
-                from tkinter import messagebox
+        result = pd.DataFrame({
+            "Column": numeric_columns,
+            "Count": [
+                df[column].count()
+                for column in numeric_columns
+            ],
+            "Missing": [
+                df[column].isna().sum()
+                for column in numeric_columns
+            ],
+            "Sum": [
+                df[column].sum()
+                for column in numeric_columns
+            ],
+            "Minimum": [
+                df[column].min()
+                for column in numeric_columns
+            ],
+            "Maximum": [
+                df[column].max()
+                for column in numeric_columns
+            ],
+            "Median": [
+                df[column].median()
+                for column in numeric_columns
+            ],
+            "Standard Deviation": [
+                df[column].std()
+                for column in numeric_columns
+            ]
+        })
 
-                messagebox.showwarning(
-                    "Numeric Summary",
-                    "No numeric columns were found in the dataset."
-                )
+        # --------------------------------------------------
+        # Round numerical results
+        # --------------------------------------------------
 
-                return
+        numeric_result_columns = [
+            "Sum",
+            "Minimum",
+            "Maximum",
+            "Median",
+            "Standard Deviation"
+        ]
 
-            window = ctk.CTkToplevel(self)
+        result[numeric_result_columns] = (
+            result[numeric_result_columns]
+            .round(2)
+        )
 
-            window.title(
-                "InsightAI - Numeric Summary"
-            )
+        # --------------------------------------------------
+        # Display Results
+        # --------------------------------------------------
 
-            window.geometry(
-                "900x550"
-            )
+        tree = self._create_table(
+            tab
+        )
 
-            title = ctk.CTkLabel(
-                window,
-                text="🔢 Numeric Summary",
-                font=("Arial", 22, "bold")
-            )
-
-            title.pack(
-                anchor="w",
-                padx=20,
-                pady=(20, 10)
-            )
-
-            # ----------------------------------------------
-            # Table
-            # ----------------------------------------------
-
-            table_frame = ctk.CTkFrame(
-                window,
-                corner_radius=10
-            )
-
-            table_frame.pack(
-                fill="both",
-                expand=True,
-                padx=20,
-                pady=(0, 20)
-            )
-
-
-            tree_frame = tk.Frame(
-                table_frame,
-                bg="#1E1E1E"
-            )
-
-            tree_frame.pack(
-                fill="both",
-                expand=True,
-                padx=10,
-                pady=10
-            )
-
-            columns = list(
-                dataframe.columns
-            )
-
-            tree = ttk.Treeview(
-                tree_frame,
-                columns=columns,
-                show="headings"
-            )
-
-            vertical_scrollbar = ttk.Scrollbar(
-                tree_frame,
-                orient="vertical",
-                command=tree.yview
-            )
-
-            horizontal_scrollbar = ttk.Scrollbar(
-                tree_frame,
-                orient="horizontal",
-                command=tree.xview
-            )
-
-            vertical_scrollbar.pack(
-                side="right",
-                fill="y"
-            )
-
-            horizontal_scrollbar.pack(
-                side="bottom",
-                fill="x"
-            )
-
-            tree.configure(
-                yscrollcommand=vertical_scrollbar.set,
-                xscrollcommand=horizontal_scrollbar.set
-            )
-
-            tree.pack(
-                side="left",
-                fill="both",
-                expand=True
-            )
-
-            for column in columns:
-
-                tree.heading(
-                    column,
-                    text=column
-                )
-
-                tree.column(
-                    column,
-                    width=150,
-                    minwidth=100,
-                    anchor="center"
-                )
-
-            for _, row in dataframe.iterrows():
-
-                values = []
-
-                for value in row:
-
-                    if value is None:
-                        value = ""
-
-                    elif isinstance(value, float):
-                        value = f"{value:,.2f}"
-
-                    else:
-                        value = str(value)
-
-                    values.append(value)
-
-                tree.insert(
-                    "",
-                    "end",
-                    values=values
-                )
-
-            # ----------------------------------------------
-            # Treeview styling
-            # ----------------------------------------------
-
-            style = ttk.Style()
-
-            try:
-                style.theme_use("clam")
-            except tk.TclError:
-                pass
-
-            style.configure(
-                "Treeview",
-                background="#1E1E1E",
-                foreground="white",
-                fieldbackground="#1E1E1E",
-                rowheight=30,
-                font=("Arial", 10)
-            )
-
-            style.configure(
-                "Treeview.Heading",
-                background="#343434",
-                foreground="white",
-                font=("Arial", 10, "bold")
-            )
-
-            style.map(
-                "Treeview",
-                background=[
-                    ("selected", "#3B82F6")
-                ],
-                foreground=[
-                    ("selected", "white")
-                ]
-            )
-
-        except Exception as e:
-
-            from tkinter import messagebox
-
-            messagebox.showerror(
-                "Numeric Summary Error",
-                str(e)
-            )
+        self._display_dataframe(
+            tree,
+            result
+        )
 
     # ======================================================
     # Group Analysis
     # ======================================================
 
-    def show_group_analysis(self):
+    def _build_group_tab(self):
 
-        try:
+        tab = self.tabview.tab("📊 Group Analysis")
 
-            df = self.master.current_df
+        self._create_title(
+            tab,
+            "📊 Group Analysis",
+            "Compare numerical values across categories."
+        )
 
-            categorical_columns = (
-                self.master.analysis.get_categorical_columns(df)
+        df = self._get_dataframe()
+
+        # --------------------------------------------------
+        # Find categorical and numeric columns
+        # --------------------------------------------------
+
+        categorical_columns = list(
+            df.select_dtypes(
+                include=["object", "category"]
+            ).columns
+        )
+
+        numeric_columns = list(
+            df.select_dtypes(
+                include="number"
+            ).columns
+        )
+
+        if not categorical_columns:
+
+            ctk.CTkLabel(
+                tab,
+                text="No categorical columns were found in the dataset.",
+                font=("Arial", 14)
+            ).pack(
+                pady=30
             )
 
-            numeric_columns = (
-                self.master.analysis.get_numeric_columns(df)
+            return
+
+        if not numeric_columns:
+
+            ctk.CTkLabel(
+                tab,
+                text="No numeric columns were found in the dataset.",
+                font=("Arial", 14)
+            ).pack(
+                pady=30
             )
 
-            if not categorical_columns:
+            return
 
-                from tkinter import messagebox
+        # --------------------------------------------------
+        # Controls
+        # --------------------------------------------------
+
+        controls = ctk.CTkFrame(
+            tab,
+            corner_radius=10
+        )
+
+        controls.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 15)
+        )
+
+        # --------------------------------------------------
+        # Category Column
+        # --------------------------------------------------
+
+        category_label = ctk.CTkLabel(
+            controls,
+            text="Category Column"
+        )
+
+        category_label.grid(
+            row=0,
+            column=0,
+            padx=(20, 10),
+            pady=(15, 5),
+            sticky="w"
+        )
+
+        category_dropdown = ctk.CTkComboBox(
+            controls,
+            values=categorical_columns,
+            width=250
+        )
+
+        category_dropdown.grid(
+            row=1,
+            column=0,
+            padx=(20, 10),
+            pady=(0, 15)
+        )
+
+        category_dropdown.set(
+            categorical_columns[0]
+        )
+
+        # --------------------------------------------------
+        # Numeric Column
+        # --------------------------------------------------
+
+        numeric_label = ctk.CTkLabel(
+            controls,
+            text="Numeric Column"
+        )
+
+        numeric_label.grid(
+            row=0,
+            column=1,
+            padx=10,
+            pady=(15, 5),
+            sticky="w"
+        )
+
+        numeric_dropdown = ctk.CTkComboBox(
+            controls,
+            values=numeric_columns,
+            width=250
+        )
+
+        numeric_dropdown.grid(
+            row=1,
+            column=1,
+            padx=10,
+            pady=(0, 15)
+        )
+
+        numeric_dropdown.set(
+            numeric_columns[0]
+        )
+
+        # --------------------------------------------------
+        # Analysis Type
+        # --------------------------------------------------
+
+        analysis_label = ctk.CTkLabel(
+            controls,
+            text="Analysis"
+        )
+
+        analysis_label.grid(
+            row=0,
+            column=2,
+            padx=10,
+            pady=(15, 5),
+            sticky="w"
+        )
+
+        analysis_dropdown = ctk.CTkComboBox(
+            controls,
+            values=[
+                "All Statistics",
+                "Sum",
+                "Count",
+                "Minimum",
+                "Maximum",
+                "Median",
+                "Mean",
+                "Standard Deviation"
+            ],
+            width=200
+        )
+
+        analysis_dropdown.grid(
+            row=1,
+            column=2,
+            padx=10,
+            pady=(0, 15)
+        )
+
+        analysis_dropdown.set(
+            "All Statistics"
+        )
+
+        # --------------------------------------------------
+        # Analyze Button
+        # --------------------------------------------------
+
+        analyze_button = ctk.CTkButton(
+            controls,
+            text="Analyze",
+            width=150
+        )
+
+        analyze_button.grid(
+            row=1,
+            column=3,
+            padx=(15, 20),
+            pady=(0, 15)
+        )
+
+        # --------------------------------------------------
+        # Results Table
+        # --------------------------------------------------
+
+        tree = self._create_table(
+            tab
+        )
+
+        # --------------------------------------------------
+        # Run Analysis
+        # --------------------------------------------------
+
+        def run_analysis():
+
+            category_column = (
+                category_dropdown.get()
+            )
+
+            numeric_column = (
+                numeric_dropdown.get()
+            )
+
+            analysis_type = (
+                analysis_dropdown.get()
+            )
+
+            # ----------------------------------------------
+            # Validate selections
+            # ----------------------------------------------
+
+            if not category_column:
 
                 messagebox.showwarning(
                     "Group Analysis",
-                    "No categorical columns were found in the dataset."
+                    "Please select a category column."
                 )
 
                 return
 
-            if not numeric_columns:
-
-                from tkinter import messagebox
+            if not numeric_column:
 
                 messagebox.showwarning(
                     "Group Analysis",
-                    "No numeric columns were found in the dataset."
+                    "Please select a numeric column."
                 )
 
                 return
 
-            window = ctk.CTkToplevel(self)
+            # ----------------------------------------------
+            # Prepare data
+            # ----------------------------------------------
 
-            window.title(
-                "InsightAI - Group Analysis"
+            working_df = df[
+                [
+                    category_column,
+                    numeric_column
+                ]
+            ].copy()
+
+            # Keep missing categories visible
+            working_df[category_column] = (
+                working_df[category_column]
+                .fillna("Missing")
             )
 
-            window.geometry(
-                "1000x650"
+            # Remove rows where numeric value is missing
+            working_df = working_df.dropna(
+                subset=[numeric_column]
             )
 
-            # ==================================================
-            # Header
-            # ==================================================
+            if working_df.empty:
 
-            title = ctk.CTkLabel(
-                window,
-                text="📊 Group Analysis",
-                font=("Arial", 22, "bold")
+                messagebox.showwarning(
+                    "Group Analysis",
+                    "No valid data was found for the selected columns."
+                )
+
+                return
+
+            # ----------------------------------------------
+            # Group data
+            # ----------------------------------------------
+
+            grouped = (
+                working_df
+                .groupby(
+                    category_column,
+                    dropna=False
+                )[numeric_column]
             )
 
-            title.pack(
-                anchor="w",
-                padx=20,
-                pady=(20, 5)
+            # ----------------------------------------------
+            # All Statistics
+            # ----------------------------------------------
+
+            if analysis_type == "All Statistics":
+
+                result = (
+                    grouped
+                    .agg(
+                        Count="count",
+                        Sum="sum",
+                        Minimum="min",
+                        Maximum="max",
+                        Median="median"
+                    )
+                    .reset_index()
+                )
+
+                result[
+                    [
+                        "Sum",
+                        "Minimum",
+                        "Maximum",
+                        "Median"
+                    ]
+                ] = result[
+                    [
+                        "Sum",
+                        "Minimum",
+                        "Maximum",
+                        "Median"
+                    ]
+                ].round(2)
+
+            # ----------------------------------------------
+            # Sum
+            # ----------------------------------------------
+
+            elif analysis_type == "Sum":
+
+                result = (
+                    grouped
+                    .sum()
+                    .reset_index()
+                )
+
+                result = result.rename(
+                    columns={
+                        numeric_column: "Sum"
+                    }
+                )
+
+                result["Sum"] = result["Sum"].round(2)
+
+            # ----------------------------------------------
+            # Count
+            # ----------------------------------------------
+
+            elif analysis_type == "Count":
+
+                result = (
+                    grouped
+                    .count()
+                    .reset_index()
+                )
+
+                result = result.rename(
+                    columns={
+                        numeric_column: "Count"
+                    }
+                )
+
+            # ----------------------------------------------
+            # Minimum
+            # ----------------------------------------------
+
+            elif analysis_type == "Minimum":
+
+                result = (
+                    grouped
+                    .min()
+                    .reset_index()
+                )
+
+                result = result.rename(
+                    columns={
+                        numeric_column: "Minimum"
+                    }
+                )
+
+                result["Minimum"] = (
+                    result["Minimum"]
+                    .round(2)
+                )
+
+            # ----------------------------------------------
+            # Maximum
+            # ----------------------------------------------
+
+            elif analysis_type == "Maximum":
+
+                result = (
+                    grouped
+                    .max()
+                    .reset_index()
+                )
+
+                result = result.rename(
+                    columns={
+                        numeric_column: "Maximum"
+                    }
+                )
+
+                result["Maximum"] = (
+                    result["Maximum"]
+                    .round(2)
+                )
+
+            # ----------------------------------------------
+            # Median
+            # ----------------------------------------------
+
+            elif analysis_type == "Median":
+
+                result = (
+                    grouped
+                    .median()
+                    .reset_index()
+                )
+
+                result = result.rename(
+                    columns={
+                        numeric_column: "Median"
+                    }
+                )
+
+                result["Median"] = (
+                    result["Median"]
+                    .round(2)
+                )
+
+            # ----------------------------------------------
+            # Mean
+            # ----------------------------------------------
+
+            elif analysis_type == "Mean":
+
+                result = (
+                    grouped
+                    .mean()
+                    .reset_index()
+                )
+
+                result = result.rename(
+                    columns={
+                        numeric_column: "Mean"
+                    }
+                )
+
+                result["Mean"] = (
+                    result["Mean"]
+                    .round(2)
+                )
+
+            # ----------------------------------------------
+            # Standard Deviation
+            # ----------------------------------------------
+
+            elif analysis_type == "Standard Deviation":
+
+                result = (
+                    grouped
+                    .std()
+                    .reset_index()
+                )
+
+                result = result.rename(
+                    columns={
+                        numeric_column: "Standard Deviation"
+                    }
+                )
+
+                result["Standard Deviation"] = (
+                    result["Standard Deviation"]
+                    .round(2)
+                )
+
+            # ----------------------------------------------
+            # Sort results
+            # ----------------------------------------------
+
+            if len(result) > 0:
+
+                result = (
+                    result
+                    .sort_values(
+                        by=result.columns[-1],
+                        ascending=False
+                    )
+                    .reset_index(drop=True)
+                )
+
+            # ----------------------------------------------
+            # No results
+            # ----------------------------------------------
+
+            if result.empty:
+
+                messagebox.showwarning(
+                    "Group Analysis",
+                    "No analysis results were generated."
+                )
+
+                return
+
+            # ----------------------------------------------
+            # Display results
+            # ----------------------------------------------
+
+            self._display_dataframe(
+                tree,
+                result
             )
 
-            subtitle = ctk.CTkLabel(
-                window,
-                text="Compare a numerical column across categories.",
-                font=("Arial", 12)
+        analyze_button.configure(
+            command=run_analysis
+        )
+
+    # ======================================================
+    # Top / Bottom Analysis
+    # ======================================================
+
+    def _build_top_bottom_tab(self):
+
+        tab = self.tabview.tab("🏆 Top / Bottom")
+
+        self._create_title(
+            tab,
+            "🏆 Top / Bottom Analysis",
+            "Find the highest or lowest values, either individually or by category."
+        )
+
+        df = self._get_dataframe()
+
+        numeric_columns = (
+            self.master.analysis.get_numeric_columns(df)
+        )
+
+        categorical_columns = (
+            self.master.analysis.get_categorical_columns(df)
+        )
+
+        if not numeric_columns:
+            ctk.CTkLabel(
+                tab,
+                text="No numeric columns were found in the dataset.",
+                font=("Arial", 14)
+            ).pack(
+                pady=30
             )
+            return
 
-            subtitle.pack(
-                anchor="w",
-                padx=20,
-                pady=(0, 15)
-            )
+        # ======================================================
+        # Controls
+        # ======================================================
 
-            # ==================================================
-            # Controls
-            # ==================================================
+        controls = ctk.CTkFrame(
+            tab,
+            corner_radius=10
+        )
 
-            controls = ctk.CTkFrame(
-                window,
-                corner_radius=10
-            )
+        controls.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 15)
+        )
 
-            controls.pack(
-                fill="x",
-                padx=20,
-                pady=(0, 15)
-            )
+        # ======================================================
+        # Analysis Mode
+        # ======================================================
 
-            # Category column
+        mode_label = ctk.CTkLabel(
+            controls,
+            text="Analysis Mode"
+        )
 
-            category_label = ctk.CTkLabel(
-                controls,
-                text="Category Column"
-            )
+        mode_label.grid(
+            row=0,
+            column=0,
+            padx=(20, 10),
+            pady=(15, 5),
+            sticky="w"
+        )
 
-            category_label.grid(
-                row=0,
-                column=0,
-                padx=(20, 10),
-                pady=(15, 5),
-                sticky="w"
-            )
+        mode_dropdown = ctk.CTkComboBox(
+            controls,
+            values=[
+                "Individual Records",
+                "By Category"
+            ],
+            width=180
+        )
 
-            category_dropdown = ctk.CTkComboBox(
-                controls,
-                values=categorical_columns,
-                width=250
-            )
+        mode_dropdown.grid(
+            row=1,
+            column=0,
+            padx=(20, 10),
+            pady=(0, 15)
+        )
 
-            category_dropdown.grid(
-                row=1,
-                column=0,
-                padx=(20, 10),
-                pady=(0, 15)
-            )
+        mode_dropdown.set(
+            "Individual Records"
+        )
 
+        # ======================================================
+        # Category Column
+        # ======================================================
+
+        category_label = ctk.CTkLabel(
+            controls,
+            text="Category Column"
+        )
+
+        category_label.grid(
+            row=0,
+            column=1,
+            padx=10,
+            pady=(15, 5),
+            sticky="w"
+        )
+
+        category_dropdown = ctk.CTkComboBox(
+            controls,
+            values=(
+                categorical_columns
+                if categorical_columns
+                else ["No categorical columns"]
+            ),
+            width=190
+        )
+
+        category_dropdown.grid(
+            row=1,
+            column=1,
+            padx=10,
+            pady=(0, 15)
+        )
+
+        if categorical_columns:
             category_dropdown.set(
                 categorical_columns[0]
             )
-
-            # Numeric column
-
-            numeric_label = ctk.CTkLabel(
-                controls,
-                text="Numeric Column"
+        else:
+            category_dropdown.set(
+                "No categorical columns"
             )
 
-            numeric_label.grid(
-                row=0,
-                column=1,
-                padx=10,
-                pady=(15, 5),
-                sticky="w"
-            )
+        # Disable category initially
+        category_dropdown.configure(
+            state="disabled"
+        )
 
-            numeric_dropdown = ctk.CTkComboBox(
-                controls,
-                values=numeric_columns,
-                width=250
-            )
+        # ======================================================
+        # Numeric Column
+        # ======================================================
 
-            numeric_dropdown.grid(
-                row=1,
-                column=1,
-                padx=10,
-                pady=(0, 15)
-            )
+        column_label = ctk.CTkLabel(
+            controls,
+            text="Numeric Column"
+        )
 
-            numeric_dropdown.set(
-                numeric_columns[0]
-            )
+        column_label.grid(
+            row=0,
+            column=2,
+            padx=10,
+            pady=(15, 5),
+            sticky="w"
+        )
 
-            # Analyze button
+        column_dropdown = ctk.CTkComboBox(
+            controls,
+            values=numeric_columns,
+            width=190
+        )
 
-            analyze_button = ctk.CTkButton(
-                controls,
-                text="Analyze",
-                width=150
-            )
+        column_dropdown.grid(
+            row=1,
+            column=2,
+            padx=10,
+            pady=(0, 15)
+        )
 
-            analyze_button.grid(
-                row=1,
-                column=2,
-                padx=(20, 20),
-                pady=(0, 15)
-            )
+        column_dropdown.set(
+            numeric_columns[0]
+        )
 
-            # ==================================================
-            # Result Area
-            # ==================================================
+        # ======================================================
+        # Analysis Type
+        # ======================================================
 
-            result_frame = ctk.CTkFrame(
-                window,
-                corner_radius=10
-            )
+        type_label = ctk.CTkLabel(
+            controls,
+            text="Analysis Type"
+        )
 
-            result_frame.pack(
-                fill="both",
-                expand=True,
-                padx=20,
-                pady=(0, 20)
-            )
+        type_label.grid(
+            row=0,
+            column=3,
+            padx=10,
+            pady=(15, 5),
+            sticky="w"
+        )
 
-            # ==================================================
-            # Treeview
-            # ==================================================
-            tree_frame = tk.Frame(
-                result_frame,
-                bg="#1E1E1E"
-            )
+        type_dropdown = ctk.CTkComboBox(
+            controls,
+            values=[
+                "Top",
+                "Bottom"
+            ],
+            width=120
+        )
 
-            tree_frame.pack(
-                fill="both",
-                expand=True,
-                padx=10,
-                pady=10
-            )
+        type_dropdown.grid(
+            row=1,
+            column=3,
+            padx=10,
+            pady=(0, 15)
+        )
 
-            tree = ttk.Treeview(
-                tree_frame,
-                show="headings"
-            )
+        type_dropdown.set(
+            "Top"
+        )
 
-            vertical_scrollbar = ttk.Scrollbar(
-                tree_frame,
-                orient="vertical",
-                command=tree.yview
-            )
+        # ======================================================
+        # Number of Records
+        # ======================================================
 
-            horizontal_scrollbar = ttk.Scrollbar(
-                tree_frame,
-                orient="horizontal",
-                command=tree.xview
-            )
+        records_label = ctk.CTkLabel(
+            controls,
+            text="Number"
+        )
 
-            vertical_scrollbar.pack(
-                side="right",
-                fill="y"
-            )
+        records_label.grid(
+            row=0,
+            column=4,
+            padx=10,
+            pady=(15, 5),
+            sticky="w"
+        )
 
-            horizontal_scrollbar.pack(
-                side="bottom",
-                fill="x"
-            )
+        records_dropdown = ctk.CTkComboBox(
+            controls,
+            values=[
+                "5",
+                "10",
+                "20",
+                "50"
+            ],
+            width=90
+        )
 
-            tree.configure(
-                yscrollcommand=vertical_scrollbar.set,
-                xscrollcommand=horizontal_scrollbar.set
-            )
+        records_dropdown.grid(
+            row=1,
+            column=4,
+            padx=10,
+            pady=(0, 15)
+        )
 
-            tree.pack(
-                side="left",
-                fill="both",
-                expand=True
-            )
+        records_dropdown.set(
+            "10"
+        )
 
-            # ==================================================
-            # Display Results
-            # ==================================================
+        # ======================================================
+        # Analyze Button
+        # ======================================================
 
-            def display_results(dataframe):
+        analyze_button = ctk.CTkButton(
+            controls,
+            text="Analyze",
+            width=120
+        )
 
-                tree.delete(
-                    *tree.get_children()
+        analyze_button.grid(
+            row=1,
+            column=5,
+            padx=(15, 20),
+            pady=(0, 15)
+        )
+
+        # ======================================================
+        # Change Analysis Mode
+        # ======================================================
+
+        def update_mode(choice=None):
+
+            if mode_dropdown.get() == "By Category":
+
+                if categorical_columns:
+
+                    category_dropdown.configure(
+                        state="normal"
+                    )
+
+            else:
+
+                category_dropdown.configure(
+                    state="disabled"
                 )
 
-                tree["columns"] = list(
-                    dataframe.columns
+        mode_dropdown.configure(
+            command=update_mode
+        )
+
+        # ======================================================
+        # Results Table
+        # ======================================================
+
+        tree = self._create_table(
+            tab
+        )
+
+        def run_analysis():
+
+            analysis_type = type_dropdown.get()
+
+            n = int(
+                records_dropdown.get()
+            )
+
+            numeric_column = (
+                column_dropdown.get()
+            )
+
+            # ==================================================
+            # Individual Records
+            # ==================================================
+
+            if mode_dropdown.get() == "Individual Records":
+
+                result = (
+                    df[[numeric_column]]
+                    .dropna()
+                    .sort_values(
+                        by=numeric_column,
+                        ascending=(
+                            analysis_type == "Bottom"
+                        )
+                    )
+                    .head(n)
+                    .reset_index(drop=True)
                 )
 
-                for column in dataframe.columns:
-
-                    tree.heading(
-                        column,
-                        text=column
-                    )
-
-                    tree.column(
-                        column,
-                        width=140,
-                        minwidth=100,
-                        anchor="center"
-                    )
-
-                for _, row in dataframe.iterrows():
-
-                    values = []
-
-                    for value in row:
-
-                        if value is None:
-
-                            value = ""
-
-                        elif isinstance(value, float):
-
-                            value = f"{value:,.2f}"
-
-                        else:
-
-                            value = str(value)
-
-                        values.append(value)
-
-                    tree.insert(
-                        "",
-                        "end",
-                        values=values
-                    )
-
             # ==================================================
-            # Run Analysis
+            # By Category
             # ==================================================
 
-            def run_analysis():
+            else:
+
+                if not categorical_columns:
+
+                    messagebox.showwarning(
+                        "Top / Bottom Analysis",
+                        "No categorical columns were found in the dataset."
+                    )
+
+                    return
 
                 category_column = (
                     category_dropdown.get()
                 )
 
-                numeric_column = (
-                    numeric_dropdown.get()
-                )
-
+                # Group numeric values by category
                 result = (
-                    self.master.analysis.group_analysis(
-                        df,
+                    df.groupby(
                         category_column,
-                        numeric_column
-                    )
+                        dropna=False
+                    )[numeric_column]
+                    .sum()
+                    .reset_index()
                 )
 
-                if result.empty:
+                # Rename the calculated value
+                result = result.rename(
+                    columns={
+                        numeric_column: "Total"
+                    }
+                )
 
-                    from tkinter import messagebox
-
-                    messagebox.showwarning(
-                        "Group Analysis",
-                        "No analysis results were generated."
+                # Sort Top or Bottom
+                result = (
+                    result
+                    .sort_values(
+                        by="Total",
+                        ascending=(
+                            analysis_type == "Bottom"
+                        )
                     )
+                    .head(n)
+                    .reset_index(drop=True)
+                )
 
-                    return
-
-                display_results(result)
-
-            analyze_button.configure(
-                command=run_analysis
-            )
+                result["Total"] = result["Total"].round(2)
 
             # ==================================================
-            # Treeview Styling
+            # No Results
             # ==================================================
 
-            style = ttk.Style()
+            if result.empty:
 
-            try:
-                style.theme_use("clam")
-            except tk.TclError:
-                pass
+                messagebox.showwarning(
+                    "Top / Bottom Analysis",
+                    "No results were found."
+                )
 
-            style.configure(
-                "Treeview",
-                background="#1E1E1E",
-                foreground="white",
-                fieldbackground="#1E1E1E",
-                rowheight=30,
-                font=("Arial", 10)
+                return
+
+            # ==================================================
+            # Display Results
+            # ==================================================
+
+            self._display_dataframe(
+                tree,
+                result
+            )
+        # Connect button
+        analyze_button.configure(
+            command=run_analysis
+        )
+    # ======================================================
+    # Category Frequency
+    # ======================================================
+
+    def _build_frequency_tab(self):
+        tab = self.tabview.tab("📋 Category Frequency")
+
+        self._create_title(
+            tab,
+            "📋 Category Frequency",
+            "Count how frequently each category appears."
+        )
+
+        df = self._get_dataframe()
+        categorical_columns = (
+            self.master.analysis.get_categorical_columns(df)
+        )
+
+        if not categorical_columns:
+            ctk.CTkLabel(
+                tab,
+                text="No categorical columns were found in the dataset.",
+                font=("Arial", 14)
+            ).pack(
+                pady=30
+            )
+            return
+
+        controls = ctk.CTkFrame(
+            tab,
+            corner_radius=10
+        )
+        controls.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 15)
+        )
+
+        column_label = ctk.CTkLabel(
+            controls,
+            text="Categorical Column"
+        )
+        column_label.grid(
+            row=0,
+            column=0,
+            padx=(20, 10),
+            pady=(15, 5),
+            sticky="w"
+        )
+
+        column_dropdown = ctk.CTkComboBox(
+            controls,
+            values=categorical_columns,
+            width=300
+        )
+        column_dropdown.grid(
+            row=1,
+            column=0,
+            padx=(20, 10),
+            pady=(0, 15)
+        )
+        column_dropdown.set(
+            categorical_columns[0]
+        )
+
+        analyze_button = ctk.CTkButton(
+            controls,
+            text="Analyze",
+            width=150
+        )
+        analyze_button.grid(
+            row=1,
+            column=1,
+            padx=(15, 20),
+            pady=(0, 15)
+        )
+
+        tree = self._create_table(
+            tab
+        )
+
+        def run_analysis():
+            result = self.master.analysis.category_frequency(
+                df,
+                column_dropdown.get()
             )
 
-            style.configure(
-                "Treeview.Heading",
-                background="#343434",
-                foreground="white",
-                font=("Arial", 10, "bold")
+            if result.empty:
+                messagebox.showwarning(
+                    "Category Frequency",
+                    "No frequency results were generated."
+                )
+                return
+
+            self._display_dataframe(
+                tree,
+                result
             )
 
-            style.map(
-                "Treeview",
-                background=[
-                    ("selected", "#3B82F6")
-                ],
-                foreground=[
-                    ("selected", "white")
+        analyze_button.configure(
+            command=run_analysis
+        )
+
+    # ======================================================
+    # Outlier Detection
+    # ======================================================
+
+    def _build_outlier_tab(self):
+
+        tab = self.tabview.tab("⚠️ Outlier Detection")
+
+        self._create_title(
+            tab,
+            "⚠️ Outlier Detection",
+            "Identify unusually high or low numerical values using the IQR method."
+        )
+
+        df = self._get_dataframe()
+
+        # --------------------------------------------------
+        # Find numeric columns
+        # --------------------------------------------------
+
+        numeric_columns = list(
+            df.select_dtypes(include="number").columns
+        )
+
+        if not numeric_columns:
+
+            ctk.CTkLabel(
+                tab,
+                text="No numeric columns were found in the dataset.",
+                font=("Arial", 14)
+            ).pack(
+                pady=30
+            )
+
+            return
+
+        # --------------------------------------------------
+        # Controls
+        # --------------------------------------------------
+
+        controls = ctk.CTkFrame(
+            tab,
+            corner_radius=10
+        )
+
+        controls.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 15)
+        )
+
+        column_label = ctk.CTkLabel(
+            controls,
+            text="Numeric Column"
+        )
+
+        column_label.grid(
+            row=0,
+            column=0,
+            padx=(20, 10),
+            pady=(15, 5),
+            sticky="w"
+        )
+
+        column_dropdown = ctk.CTkComboBox(
+            controls,
+            values=numeric_columns,
+            width=300
+        )
+
+        column_dropdown.grid(
+            row=1,
+            column=0,
+            padx=(20, 10),
+            pady=(0, 15)
+        )
+
+        column_dropdown.set(
+            numeric_columns[0]
+        )
+
+        analyze_button = ctk.CTkButton(
+            controls,
+            text="Detect Outliers",
+            width=160
+        )
+
+        analyze_button.grid(
+            row=1,
+            column=1,
+            padx=(15, 20),
+            pady=(0, 15)
+        )
+
+        # --------------------------------------------------
+        # Outlier Summary
+        # --------------------------------------------------
+
+        summary_frame = ctk.CTkFrame(
+            tab,
+            corner_radius=10
+        )
+
+        summary_frame.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 15)
+        )
+
+        summary_title = ctk.CTkLabel(
+            summary_frame,
+            text="Outlier Summary",
+            font=("Arial", 15, "bold")
+        )
+
+        summary_title.grid(
+            row=0,
+            column=0,
+            columnspan=4,
+            padx=15,
+            pady=(12, 8),
+            sticky="w"
+        )
+
+        total_label = ctk.CTkLabel(
+            summary_frame,
+            text="Total Records: —"
+        )
+
+        total_label.grid(
+            row=1,
+            column=0,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        outlier_label = ctk.CTkLabel(
+            summary_frame,
+            text="Outliers Found: —"
+        )
+
+        outlier_label.grid(
+            row=1,
+            column=1,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        percentage_label = ctk.CTkLabel(
+            summary_frame,
+            text="Outlier %: —"
+        )
+
+        percentage_label.grid(
+            row=1,
+            column=2,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        iqr_label = ctk.CTkLabel(
+            summary_frame,
+            text="IQR: —"
+        )
+
+        iqr_label.grid(
+            row=1,
+            column=3,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        q1_label = ctk.CTkLabel(
+            summary_frame,
+            text="Q1: —"
+        )
+
+        q1_label.grid(
+            row=2,
+            column=0,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        q3_label = ctk.CTkLabel(
+            summary_frame,
+            text="Q3: —"
+        )
+
+        q3_label.grid(
+            row=2,
+            column=1,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        lower_label = ctk.CTkLabel(
+            summary_frame,
+            text="Lower Bound: —"
+        )
+
+        lower_label.grid(
+            row=2,
+            column=2,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        upper_label = ctk.CTkLabel(
+            summary_frame,
+            text="Upper Bound: —"
+        )
+
+        upper_label.grid(
+            row=2,
+            column=3,
+            padx=15,
+            pady=(0, 12),
+            sticky="w"
+        )
+
+        # --------------------------------------------------
+        # Results Table
+        # --------------------------------------------------
+
+        tree = self._create_table(
+            tab
+        )
+
+        # --------------------------------------------------
+        # Run Outlier Analysis
+        # --------------------------------------------------
+
+        def run_analysis():
+
+            column = column_dropdown.get()
+
+            if not column:
+                return
+
+            # ----------------------------------------------
+            # Get valid numeric values
+            # ----------------------------------------------
+
+            values = (
+                df[column]
+                .dropna()
+            )
+
+            if values.empty:
+
+                messagebox.showwarning(
+                    "Outlier Detection",
+                    "The selected column contains no valid numeric values."
+                )
+
+                return
+
+            # ----------------------------------------------
+            # Calculate Quartiles
+            # ----------------------------------------------
+
+            q1 = values.quantile(0.25)
+            q3 = values.quantile(0.75)
+
+            # ----------------------------------------------
+            # Calculate IQR
+            # ----------------------------------------------
+
+            iqr = q3 - q1
+
+            # ----------------------------------------------
+            # Calculate Bounds
+            # ----------------------------------------------
+
+            lower_bound = q1 - (1.5 * iqr)
+            upper_bound = q3 + (1.5 * iqr)
+
+            # ----------------------------------------------
+            # Detect Outliers
+            # ----------------------------------------------
+
+            outlier_mask = (
+                (df[column] < lower_bound) |
+                (df[column] > upper_bound)
+            )
+
+            result = (
+                df.loc[
+                    outlier_mask
+                    & df[column].notna()
                 ]
+                .copy()
             )
 
-        except Exception as e:
+            # ----------------------------------------------
+            # Calculate Summary
+            # ----------------------------------------------
 
-            from tkinter import messagebox
+            total_records = len(values)
 
-            messagebox.showerror(
-                "Group Analysis Error",
-                str(e)
+            outlier_count = len(result)
+
+            outlier_percentage = (
+                (outlier_count / total_records) * 100
+                if total_records > 0
+                else 0
             )
+
+            # ----------------------------------------------
+            # Update Summary
+            # ----------------------------------------------
+
+            total_label.configure(
+                text=f"Total Records: {total_records:,}"
+            )
+
+            outlier_label.configure(
+                text=f"Outliers Found: {outlier_count:,}"
+            )
+
+            percentage_label.configure(
+                text=f"Outlier %: {outlier_percentage:.2f}%"
+            )
+
+            iqr_label.configure(
+                text=f"IQR: {iqr:,.2f}"
+            )
+
+            q1_label.configure(
+                text=f"Q1: {q1:,.2f}"
+            )
+
+            q3_label.configure(
+                text=f"Q3: {q3:,.2f}"
+            )
+
+            lower_label.configure(
+                text=f"Lower Bound: {lower_bound:,.2f}"
+            )
+
+            upper_label.configure(
+                text=f"Upper Bound: {upper_bound:,.2f}"
+            )
+
+            # ----------------------------------------------
+            # Display Results
+            # ----------------------------------------------
+
+            self._display_dataframe(
+                tree,
+                result
+            )
+
+            # ----------------------------------------------
+            # No Outliers
+            # ----------------------------------------------
+
+            if result.empty:
+
+                messagebox.showinfo(
+                    "Outlier Detection",
+                    "No outliers were detected for the selected column."
+                )
+
+        analyze_button.configure(
+            command=run_analysis
+        )
