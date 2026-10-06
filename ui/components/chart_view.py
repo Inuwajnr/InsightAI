@@ -23,7 +23,7 @@ class ChartView(ctk.CTkFrame):
         # =====================================
 
         self.figure = Figure(
-            figsize=(10, 6),
+            figsize=(14, 8),
             dpi=100,
             constrained_layout=True
         )

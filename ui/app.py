@@ -1,3 +1,5 @@
+import os
+import sys
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from data.analyzer import DataAnalyzer
@@ -21,12 +23,28 @@ from analysis import DataAnalysisEngine
 from ui.sidebar import Sidebar
 from ui.components.ai_chat_panel import AIChatPanel
 from ui.pages.dashboard import Dashboard
+from ui.components.about_window import AboutWindow
 
+
+def resource_path(relative_path):
+    """Get the correct resource path for development and PyInstaller."""
+    if getattr(sys, "frozen", False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )
+
+    return os.path.join(base_path, relative_path)
 
 class InsightAIApp(ctk.CTk):
 
     def __init__(self):
         super().__init__()
+
+        self.iconbitmap(
+            resource_path(r"assets\insightai.ico")
+        )
 
         # =====================================
         # Window
@@ -118,6 +136,9 @@ class InsightAIApp(ctk.CTk):
             self.current_df,
             self.pivot_engine
         )
+
+    def open_about(self):
+        AboutWindow(self)
 
     # ======================================================
     # Upload Dataset
@@ -291,6 +312,7 @@ class InsightAIApp(ctk.CTk):
                 "No Dataset",
                 "Please upload a dataset first."
             )
+
             return
 
         controls = self.dashboard.chart_controls
@@ -300,47 +322,262 @@ class InsightAIApp(ctk.CTk):
         y_col = controls.y_dropdown.get()
         top_n = controls.top_dropdown.get()
 
-        # ===============================
-        # DEBUG INFORMATION
-        # ===============================
+        # ==============================================
+        # Validate selections
+        # ==============================================
+
+        if x_col == "Select X":
+
+            messagebox.showwarning(
+                "Chart Selection",
+                "Please select an X Axis column."
+            )
+
+            return
+
+        if chart != "Histogram" and y_col == "Select Y":
+
+            messagebox.showwarning(
+                "Chart Selection",
+                "Please select a Y Axis column."
+            )
+
+            return
+
+        # ==============================================
+        # Chart Data
+        # ==============================================
+
+        chart_df = self.current_df.copy()
+
+        # ==============================================
+        # Date Trend Settings
+        # ==============================================
+
+        time_grain = "Monthly"
+        date_range = "All Time"
+
+        if hasattr(controls, "time_grain_dropdown"):
+
+            time_grain = (
+                controls.time_grain_dropdown.get()
+            )
+
+        if hasattr(controls, "date_range_dropdown"):
+
+            date_range = (
+                controls.date_range_dropdown.get()
+            )
+
+        # ==============================================
+        # Detect Date-Based Line Chart
+        # ==============================================
+
+        is_date_line_chart = (
+            chart == "Line Chart"
+            and pd.api.types.is_datetime64_any_dtype(
+                chart_df[x_col]
+            )
+        )
+
+        # ==============================================
+        # Prepare Date-Based Trend
+        # ==============================================
+
+        if is_date_line_chart:
+
+            try:
+
+                # ------------------------------------------
+                # Make sure Y is numeric
+                # ------------------------------------------
+
+                chart_df[y_col] = pd.to_numeric(
+                    chart_df[y_col],
+                    errors="coerce"
+                )
+
+                chart_df = chart_df.dropna(
+                    subset=[x_col, y_col]
+                )
+
+                if chart_df.empty:
+
+                    messagebox.showwarning(
+                        "Chart Data",
+                        "There is no valid data available "
+                        "for the selected date and value columns."
+                    )
+
+                    return
+
+                # ------------------------------------------
+                # Sort by date
+                # ------------------------------------------
+
+                chart_df = chart_df.sort_values(
+                    by=x_col
+                )
+
+                # ------------------------------------------
+                # Date Range
+                # ------------------------------------------
+
+                if date_range != "All Time":
+
+                    latest_date = chart_df[x_col].max()
+
+                    if date_range == "Last 3 Months":
+
+                        start_date = (
+                            latest_date
+                            - pd.DateOffset(months=3)
+                        )
+
+                    elif date_range == "Last 6 Months":
+
+                        start_date = (
+                            latest_date
+                            - pd.DateOffset(months=6)
+                        )
+
+                    elif date_range == "Last 12 Months":
+
+                        start_date = (
+                            latest_date
+                            - pd.DateOffset(months=12)
+                        )
+
+                    else:
+
+                        start_date = None
+
+                    if start_date is not None:
+
+                        chart_df = chart_df[
+                            chart_df[x_col] >= start_date
+                        ]
+
+                # ------------------------------------------
+                # Determine Time Grain
+                # ------------------------------------------
+
+                if time_grain == "Auto":
+
+                    date_span = (
+                        chart_df[x_col].max()
+                        - chart_df[x_col].min()
+                    ).days
+
+                    if date_span <= 31:
+
+                        time_grain = "Daily"
+
+                    elif date_span <= 90:
+
+                        time_grain = "Weekly"
+
+                    elif date_span <= 730:
+
+                        time_grain = "Monthly"
+
+                    else:
+
+                        time_grain = "Yearly"
+
+                # ------------------------------------------
+                # Create Period
+                # ------------------------------------------
+
+                if time_grain == "Daily":
+
+                    chart_df["_period"] = (
+                        chart_df[x_col]
+                        .dt.floor("D")
+                    )
+
+                elif time_grain == "Weekly":
+
+                    chart_df["_period"] = (
+                        chart_df[x_col]
+                        .dt.to_period("W")
+                        .dt.start_time
+                    )
+
+                elif time_grain == "Monthly":
+
+                    chart_df["_period"] = (
+                        chart_df[x_col]
+                        .dt.to_period("M")
+                        .dt.start_time
+                    )
+
+                elif time_grain == "Quarterly":
+
+                    chart_df["_period"] = (
+                        chart_df[x_col]
+                        .dt.to_period("Q")
+                        .dt.start_time
+                    )
+
+                elif time_grain == "Yearly":
+
+                    chart_df["_period"] = (
+                        chart_df[x_col]
+                        .dt.to_period("Y")
+                        .dt.start_time
+                    )
+
+                # ------------------------------------------
+                # Aggregate
+                # ------------------------------------------
+
+                chart_df = (
+                    chart_df
+                    .groupby("_period", as_index=False)[y_col]
+                    .sum()
+                )
+
+                chart_df = chart_df.rename(
+                    columns={
+                        "_period": x_col
+                    }
+                )
+
+                # ------------------------------------------
+                # Date charts use the complete trend
+                # ------------------------------------------
+
+                top_n = "All"
+
+            except Exception as e:
+
+                messagebox.showerror(
+                    "Date Trend Error",
+                    str(e)
+                )
+
+                return
+
+        # ==============================================
+        # Debug Information
+        # ==============================================
 
         print("\n==============================")
         print("Chart Type :", chart)
         print("X Column   :", x_col)
         print("Y Column   :", y_col)
+
+        if is_date_line_chart:
+
+            print("Time Grain :", time_grain)
+            print("Date Range :", date_range)
+
         print("==============================")
 
-        print("\nUnique X Values:")
-        print(self.current_df[x_col].value_counts(dropna=False))
-
-        print("\nFirst 10 Records:")
-        print(self.current_df[[x_col, y_col]].head(10))
-
-        if chart in ["Bar Chart", "Column Chart", "Line Chart"]:
-
-            debug_df = self.current_df.copy()
-
-            debug_df[y_col] = pd.to_numeric(
-                debug_df[y_col],
-                errors="coerce"
-            )
-
-            debug_df = debug_df.dropna(
-                subset=[x_col, y_col]
-            )
-
-            grouped = (
-                debug_df.groupby(x_col)[y_col]
-                .sum()
-                .sort_values(ascending=False)
-            )
-
-            print("\nGrouped Result")
-            print(grouped)
-
-        # ===============================
-        # DRAW CHART
-        # ===============================
+        # ==============================================
+        # Draw Chart
+        # ==============================================
 
         chart_view = self.dashboard.chart_view
 
@@ -352,7 +589,7 @@ class InsightAIApp(ctk.CTk):
 
                 self.chart_generator.bar_chart(
                     chart_view.ax,
-                    self.current_df,
+                    chart_df,
                     x_col,
                     y_col,
                     top_n
@@ -362,7 +599,7 @@ class InsightAIApp(ctk.CTk):
 
                 self.chart_generator.column_chart(
                     chart_view.ax,
-                    self.current_df,
+                    chart_df,
                     x_col,
                     y_col,
                     top_n
@@ -372,27 +609,26 @@ class InsightAIApp(ctk.CTk):
 
                 self.chart_generator.line_chart(
                     chart_view.ax,
-                    self.current_df,
+                    chart_df,
                     x_col,
                     y_col,
                     top_n
-
                 )
 
             elif chart == "Scatter Plot":
 
                 self.chart_generator.scatter_plot(
                     chart_view.ax,
-                    self.current_df,
+                    chart_df,
                     x_col,
-                    y_col,
+                    y_col
                 )
 
             elif chart == "Pie Chart":
 
                 self.chart_generator.pie_chart(
                     chart_view.ax,
-                    self.current_df,
+                    chart_df,
                     x_col
                 )
 
@@ -400,7 +636,7 @@ class InsightAIApp(ctk.CTk):
 
                 self.chart_generator.histogram(
                     chart_view.ax,
-                    self.current_df,
+                    chart_df,
                     x_col
                 )
 
@@ -416,7 +652,6 @@ class InsightAIApp(ctk.CTk):
                 "Chart Error",
                 str(e)
             )
-
     # ======================================================
     # Export Current Chart
     # ======================================================
@@ -500,6 +735,16 @@ class InsightAIApp(ctk.CTk):
             self.dashboard.status_bar.set_status(
                 "Dataset Cleaned Successfully"
             )
+
+            # Refresh AI Chat if it is currently open
+            if hasattr(self, "ai_chat_window"):
+                try:
+                    if self.ai_chat_window.winfo_exists():
+                        self.ai_chat_window.refresh_dataset_context(
+                            show_welcome=False
+                        )
+                except Exception:
+                    pass
 
             # --------------------------------
             # Cleaning Report

@@ -17,22 +17,87 @@ class DataAnalyzer:
 
         if file_path.lower().endswith(".csv"):
 
-            return pd.read_csv(file_path)
+            df = pd.read_csv(file_path)
 
         elif file_path.lower().endswith((".xlsx", ".xls")):
 
             if sheet_name:
 
-                return pd.read_excel(
+                df = pd.read_excel(
                     file_path,
                     sheet_name=sheet_name
                 )
 
-            return pd.read_excel(file_path)
+            else:
 
-        raise ValueError(
-            "Unsupported file type."
-        )
+                df = pd.read_excel(file_path)
+
+        else:
+
+            raise ValueError(
+                "Unsupported file type."
+            )
+
+        # ------------------------------------------
+        # Automatically detect date-like columns
+        # ------------------------------------------
+        df = self.detect_date_columns(df)
+
+        return df
+
+    # ==========================================
+    # Date Detection
+    # ==========================================
+
+    def detect_date_columns(self, df):
+
+        new_df = df.copy()
+
+        for column in new_df.columns:
+
+            # Only inspect text/object columns.
+            # Numeric columns and existing datetime
+            # columns should remain untouched.
+            if not (
+                pd.api.types.is_object_dtype(
+                    new_df[column]
+                )
+                or pd.api.types.is_string_dtype(
+                    new_df[column]
+                )
+            ):
+                continue
+
+            # Don't try to convert completely empty columns
+            non_empty = new_df[column].dropna()
+
+            if non_empty.empty:
+                continue
+
+            # Convert a copy so the original values
+            # remain untouched if this isn't a date column.
+            converted = pd.to_datetime(
+                non_empty,
+                errors="coerce",
+                dayfirst=True
+            )
+
+            valid_ratio = (
+                converted.notna().mean()
+            )
+
+            # Only convert the column when a high
+            # percentage of its non-empty values
+            # can be interpreted as dates.
+            if valid_ratio >= 0.80:
+
+                new_df[column] = pd.to_datetime(
+                    new_df[column],
+                    errors="coerce",
+                    dayfirst=True
+                )
+
+        return new_df
 
     # ==========================================
     # Main Dataset Profile
@@ -73,17 +138,25 @@ class DataAnalyzer:
 
             # Counts
 
-            "numeric_columns": len(numeric_columns),
+            "numeric_columns": len(
+                numeric_columns
+            ),
 
-            "categorical_columns": len(categorical_columns),
+            "categorical_columns": len(
+                categorical_columns
+            ),
 
             # Lists
 
-            "column_names": list(df.columns),
+            "column_names": list(
+                df.columns
+            ),
 
             "numeric_column_names": numeric_columns,
 
-            "categorical_column_names": categorical_columns,
+            "categorical_column_names": (
+                categorical_columns
+            ),
 
             # Data Types
 
@@ -94,7 +167,9 @@ class DataAnalyzer:
 
             # Missing By Column
 
-            "missing_by_column": df.isna().sum().to_dict()
+            "missing_by_column": (
+                df.isna().sum().to_dict()
+            )
         }
 
         return profile
@@ -114,25 +189,33 @@ class DataAnalyzer:
     def get_numeric_columns(self, df):
 
         return list(
-            df.select_dtypes(include="number").columns
+            df.select_dtypes(
+                include="number"
+            ).columns
         )
 
     def get_categorical_columns(self, df):
 
         return list(
-            df.select_dtypes(exclude="number").columns
+            df.select_dtypes(
+                exclude="number"
+            ).columns
         )
 
     def get_memory_usage(self, df):
 
         return round(
-            df.memory_usage(deep=True).sum() / 1024,
+            df.memory_usage(
+                deep=True
+            ).sum() / 1024,
             2
         )
 
     def get_duplicate_count(self, df):
 
-        return int(df.duplicated().sum())
+        return int(
+            df.duplicated().sum()
+        )
 
     def get_missing_by_column(self, df):
 

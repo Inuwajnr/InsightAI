@@ -14,8 +14,8 @@ class KPICard(ctk.CTkFrame):
         super().__init__(
             master,
             corner_radius=15,
-            width=190,
-            height=110,
+            width=165,
+            height=90,
             border_width=2,
             border_color=accent
         )
@@ -34,7 +34,7 @@ class KPICard(ctk.CTkFrame):
         top_frame.pack(
             fill="x",
             padx=12,
-            pady=(10, 0)
+            pady=(15, 0)
         )
 
         self.icon_label = ctk.CTkLabel(
@@ -55,7 +55,7 @@ class KPICard(ctk.CTkFrame):
 
         self.title_label.pack(
             side="left",
-            padx=(8, 0)
+            padx=(15, 0)
         )
 
         # ====================================

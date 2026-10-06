@@ -27,7 +27,7 @@ class ProfilePanel(ctk.CTkFrame):
         self.info_box = ctk.CTkTextbox(
             self,
             width=320,
-            height=300
+            height=600
         )
 
         self.info_box.pack(

@@ -332,19 +332,67 @@ class ChartGenerator:
     # Line Chart
     # ==========================================
 
-    def line_chart(self, ax, df, x_col, y_col, top_n ="10"):
+    # ==========================================
+    # Line Chart
+    # ==========================================
+
+    def line_chart(
+        self,
+        ax,
+        df,
+        x_col,
+        y_col,
+        top_n="10"
+    ):
 
         ax.clear()
 
-        if top_n != "All":
-            grouped = grouped.head(int(top_n))
-
+        # ------------------------------------------
+        # Prepare the grouped data
+        # ------------------------------------------
         grouped = self._prepare_grouped_data(
             df,
             x_col,
             y_col
         )
 
+        if grouped.empty:
+            raise ValueError(
+                "No data available for the selected columns."
+            )
+
+        # ------------------------------------------
+        # Date-based line chart
+        # ------------------------------------------
+        if pd.api.types.is_datetime64_any_dtype(
+            grouped.index
+        ):
+
+            # Dates must always be chronological
+            grouped = grouped.sort_index()
+
+            # For dates, Top N means the most recent
+            # N dates rather than the highest sales dates.
+            if top_n != "All":
+
+                grouped = grouped.tail(
+                    int(top_n)
+                )
+
+        # ------------------------------------------
+        # Normal categorical line chart
+        # ------------------------------------------
+        else:
+
+            if top_n != "All":
+
+                grouped = grouped.head(
+                    int(top_n)
+                )
+
+        # ------------------------------------------
+        # Draw line
+        # ------------------------------------------
         ax.plot(
             grouped.index,
             grouped.values,
@@ -353,23 +401,57 @@ class ChartGenerator:
             color="#3B82F6"
         )
 
-        for x, y in zip(grouped.index, grouped.values):
+        # ------------------------------------------
+        # Add value labels
+        # ------------------------------------------
+        for x, y in zip(
+            grouped.index,
+            grouped.values
+        ):
 
-            ax.text(
-                x,
-                y,
+            ax.annotate(
                 f"{y:,.0f}",
+                (x, y),
+                xytext=(0, 8),
+                textcoords="offset points",
                 ha="center",
                 va="bottom",
-                fontsize=9
+                fontsize=8
             )
 
+        # ------------------------------------------
+        # Format chart
+        # ------------------------------------------
         self._style_chart(
             ax,
             f"Trend of {y_col}",
             x_col,
             y_col
         )
+
+        # ------------------------------------------
+        # Date formatting
+        # ------------------------------------------
+        if pd.api.types.is_datetime64_any_dtype(
+            grouped.index
+        ):
+
+            import matplotlib.dates as mdates
+
+            ax.xaxis.set_major_locator(
+                mdates.AutoDateLocator()
+            )
+
+            ax.xaxis.set_major_formatter(
+                mdates.DateFormatter("%d %b %Y")
+            )
+
+            ax.tick_params(
+                axis="x",
+                rotation=35
+            )
+
+        ax.figure.tight_layout()
 
     # ==========================================
     # Scatter Plot

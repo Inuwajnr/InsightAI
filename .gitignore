@@ -1,14 +1,38 @@
+# Python cache
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
 
+# Virtual environments
 .venv/
 venv/
+myenv/
 
+# Environment variables
 .env
+.env.*
 
+# Jupyter
 .ipynb_checkpoints/
 
+# IDEs
 .vscode/
 .idea/
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+
+# Installer output
+installer/
+
+# Python test/cache files
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

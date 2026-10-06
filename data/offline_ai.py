@@ -1,1574 +1,2543 @@
-# data/offline_ai.py
-
+import json
 import re
-import difflib
+from typing import Any, Dict, Optional
+
 import pandas as pd
+
+from core.ollama_client import OllamaClient
 
 
 class OfflineAIEngine:
     """
-    Dataset-independent offline natural-language analytics engine.
+    Hybrid offline AI engine for InsightAI.
 
-    The engine:
-    1. Reads the actual dataset structure.
-    2. Understands common natural-language questions.
-    3. Detects columns dynamically.
-    4. Detects filters dynamically from dataset values.
-    5. Performs calculations using pandas.
-    6. Returns a natural-language answer.
+    Fast path:
+        Handles obvious analytical questions directly with Pandas.
 
-    No internet.
-    No API.
-    No external AI model.
+    AI path:
+        Uses Qwen3 8B only when natural-language understanding
+        is actually required.
+
+    Pandas is always the authority for calculations.
     """
 
     def __init__(self):
-        self.stop_words = {
-            "the",
-            "a",
-            "an",
-            "is",
-            "are",
-            "was",
-            "were",
-            "be",
-            "of",
-            "to",
-            "for",
-            "in",
-            "on",
-            "at",
-            "by",
-            "with",
-            "from",
-            "and",
-            "or",
-            "me",
-            "show",
-            "tell",
-            "give",
-            "please",
-            "what",
-            "which",
-            "how",
-            "many",
-            "much",
-            "does",
-            "do",
-            "did",
-            "can",
-            "you",
-            "my",
-            "dataset",
-            "data",
-            "values",
-        }
+
+        self.llm = OllamaClient(
+            model="qwen3:8b",
+            base_url="http://localhost:11434",
+        )
 
     # ==========================================================
-    # PUBLIC ENTRY POINT
+    # PUBLIC METHOD
     # ==========================================================
 
-    def answer(self, df, question):
-        """
-        Main entry point.
+    def answer(
+        self,
+        df: pd.DataFrame,
+        question: str
+    ) -> str:
 
-        Parameters
-        ----------
-        df : pandas.DataFrame
-        question : str
+        if df is None or df.empty:
 
-        Returns
-        -------
-        str
-        """
-
-        if df is None or not isinstance(df, pd.DataFrame):
-            return "There is currently no valid dataset loaded."
-
-        if df.empty:
-            return "The dataset is empty. Please load a dataset containing some rows."
+            return (
+                "There is currently no usable dataset loaded. "
+                "Please upload a CSV or Excel dataset first."
+            )
 
         if not question or not question.strip():
-            return "Please enter a question about the dataset."
 
-        q = self._normalize(question)
+            return (
+                "Please enter a question about the dataset."
+            )
+
+        question = question.strip()
 
         try:
-            # --------------------------------------------------
-            # Dataset structure questions
-            # --------------------------------------------------
 
-            if self._contains_any(
-                q,
-                [
-                    "column names",
-                    "name of columns",
-                    "names of columns",
-                    "list columns",
-                    "list the columns",
-                    "what columns",
-                    "which columns",
-                    "columns are there",
-                ],
-            ):
-                return self._column_names(df)
+            # ==================================================
+            # FAST PATH
+            # ==================================================
 
-            if self._contains_any(
-                q,
-                [
-                    "number of columns",
-                    "how many columns",
-                    "total columns",
-                    "count of columns",
-                ],
-            ):
-                return f"The dataset has {len(df.columns):,} columns."
+            fast_result = self._fast_path(
+                df,
+                question
+            )
 
-            if self._contains_any(
-                q,
-                [
-                    "number of rows",
-                    "how many rows",
-                    "total rows",
-                    "row count",
-                    "number of records",
-                    "how many records",
-                    "number of entries",
-                    "how many entries",
-                ],
-            ):
-                return f"The dataset contains {len(df):,} rows."
+            if fast_result is not None:
 
-            if self._contains_any(
-                q,
-                [
-                    "shape of dataset",
-                    "shape of the dataset",
-                    "dataset shape",
-                    "data shape",
-                    "size of dataset",
-                ],
-            ):
-                return (
-                    f"The dataset has {len(df):,} rows "
-                    f"and {len(df.columns):,} columns."
+                return fast_result
+
+            # ==================================================
+            # AI PATH
+            # ==================================================
+
+            plan = self._understand_question(
+                df,
+                question
+            )
+
+            plan = self._validate_plan(
+                df,
+                plan
+            )
+
+            result = self._execute_plan(
+                df,
+                plan,
+                question
+            )
+
+            if result is None:
+
+                return self._fallback_answer(
+                    df,
+                    question
                 )
 
-            # --------------------------------------------------
-            # Missing values
-            # IMPORTANT: before generic column questions
-            # --------------------------------------------------
+            # Simple verified results do not require
+            # another Qwen request.
 
-            if self._contains_any(
-                q,
-                [
-                    "missing",
-                    "null",
-                    "nulls",
-                    "empty values",
-                    "blank values",
-                    "missing values",
-                    "columns with missing",
-                    "which columns have missing",
-                    "where are the missing",
-                ],
-            ):
-                return self._missing_values(df)
+            if self._is_simple_result(result):
 
-            # --------------------------------------------------
-            # Duplicate questions
-            # --------------------------------------------------
+                return self._format_result(
+                    result
+                )
 
-            if self._contains_any(
-                q,
-                [
-                    "duplicates",
-                    "duplicate rows",
-                    "duplicated rows",
-                    "repeated rows",
-                    "repeated records",
-                ],
-            ):
-                return self._duplicates(df)
+            # Complex interpretation can use Qwen.
 
-            # --------------------------------------------------
-            # Data type questions
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "data types",
-                    "datatype",
-                    "data type",
-                    "types of columns",
-                    "column types",
-                    "type of each column",
-                ],
-            ):
-                return self._data_types(df)
-
-            if self._contains_any(
-                q,
-                [
-                    "numeric columns",
-                    "numerical columns",
-                    "number columns",
-                    "columns containing numbers",
-                ],
-            ):
-                return self._numeric_columns(df)
-
-            if self._contains_any(
-                q,
-                [
-                    "categorical columns",
-                    "category columns",
-                    "categorical data",
-                    "text columns",
-                ],
-            ):
-                return self._categorical_columns(df)
-
-            # --------------------------------------------------
-            # Unique values
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "unique values",
-                    "distinct values",
-                    "different values",
-                    "unique categories",
-                    "distinct categories",
-                ],
-            ):
-                return self._unique_values(df, q)
-
-            # --------------------------------------------------
-            # Percentage questions
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "percentage",
-                    "percent",
-                    "proportion",
-                    "share",
-                    "%",
-                ],
-            ):
-                result = self._percentage_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Correlation
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "correlation",
-                    "correlated",
-                    "relationship between",
-                    "relationship of",
-                ],
-            ):
-                return self._correlation_analysis(df, q)
-
-            # --------------------------------------------------
-            # Group analysis
-            # --------------------------------------------------
-
-            if self._is_group_question(q):
-                result = self._group_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Top / bottom
-            # --------------------------------------------------
-
-            if self._is_top_bottom_question(q):
-                result = self._top_bottom_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Average / mean
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "average",
-                    "mean",
-                    "avg",
-                ],
-            ):
-                result = self._mean_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Median
-            # --------------------------------------------------
-
-            if "median" in q:
-                result = self._median_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Most common / mode
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "most common",
-                    "most frequent",
-                    "frequently occurs",
-                    "highest frequency",
-                    "mode",
-                ],
-            ):
-                result = self._mode_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Minimum / lowest
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "lowest",
-                    "smallest",
-                    "minimum",
-                    "minimum value",
-                    "least",
-                    "least value",
-                ],
-            ):
-                result = self._min_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Maximum / highest
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "highest",
-                    "largest",
-                    "maximum",
-                    "maximum value",
-                    "greatest",
-                    "most",
-                ],
-            ):
-                result = self._max_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Sum / total
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "total",
-                    "sum",
-                    "combined",
-                    "altogether",
-                    "overall amount",
-                ],
-            ):
-                result = self._sum_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Count questions
-            # --------------------------------------------------
-
-            if self._is_count_question(q):
-                result = self._count_analysis(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Show / list values
-            # --------------------------------------------------
-
-            if self._contains_any(
-                q,
-                [
-                    "show values",
-                    "list values",
-                    "show the values",
-                    "list the values",
-                    "what are the values",
-                ],
-            ):
-                result = self._show_values(df, q)
-
-                if result:
-                    return result
-
-            # --------------------------------------------------
-            # Generic column-specific request
-            # --------------------------------------------------
-
-            column = self._find_column(df, q)
-
-            if column:
-                return self._generic_column_answer(df, column, q)
-
-            # --------------------------------------------------
-            # Fallback
-            # --------------------------------------------------
-
-            return self._fallback(df)
+            return self._explain_result(
+                question,
+                result
+            )
 
         except Exception as e:
+
+            print(
+                "OfflineAIEngine error:",
+                repr(e)
+            )
+
             return (
-                "I understood the question, but I couldn't complete "
-                f"the analysis.\n\nTechnical detail: {e}"
+                "I couldn't complete that analysis right now. "
+                "Please try rephrasing the question."
             )
 
     # ==========================================================
-    # NORMALIZATION
+    # FAST PATH
     # ==========================================================
 
-    def _normalize(self, text):
-        text = str(text).lower().strip()
+    def _fast_path(
+        self,
+        df: pd.DataFrame,
+        question: str
+    ) -> Optional[str]:
 
-        text = text.replace("_", " ")
-        text = text.replace("-", " ")
-        text = text.replace("/", " ")
-        text = re.sub(r"\s+", " ", text)
+        q = question.lower().strip()
 
-        return text
+        # Get column types from the current dataset
+        numeric_columns = list(
+            df.select_dtypes(include="number").columns
+        )
 
-    def _normalize_column(self, text):
-        text = self._normalize(text)
+        categorical_columns = list(
+            df.select_dtypes(
+                include=["object", "category"]
+            ).columns
+        )
 
-        text = re.sub(r"[^a-z0-9 ]", "", text)
+        normalized = re.sub(
+            r"[^a-z0-9\s]",
+            " ",
+            q
+        )
 
-        return text.strip()
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            normalized
+        ).strip()
 
-    def _contains_any(self, text, phrases):
-        return any(phrase in text for phrase in phrases)
+        # ------------------------------------------------------
+        # ROW COUNT
+        # ------------------------------------------------------
+
+        row_patterns = [
+            r"\bhow many rows\b",
+            r"\bnumber of rows\b",
+            r"\btotal rows\b",
+            r"\bhow many records\b",
+            r"\bnumber of records\b",
+            r"\btotal records\b",
+            r"\bhow many observations\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in row_patterns
+        ):
+
+            return (
+                f"The dataset contains "
+                f"{len(df):,} rows."
+            )
+
+        # ------------------------------------------------------
+        # COLUMN COUNT
+        # ------------------------------------------------------
+
+        column_count_patterns = [
+            r"\bhow many columns\b",
+            r"\bnumber of columns\b",
+            r"\btotal columns\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in column_count_patterns
+        ):
+
+            return (
+                f"The dataset contains "
+                f"{len(df.columns):,} columns."
+            )
+
+        # ------------------------------------------------------
+        # SHOW COLUMN NAMES
+        # ------------------------------------------------------
+
+        column_patterns = [
+            r"\bwhat are the columns\b",
+            r"\bwhich columns are there\b",
+            r"\blist the columns\b",
+            r"\bshow the columns\b",
+            r"\bcolumn names\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in column_patterns
+        ):
+
+            columns = list(
+                df.columns
+            )
+
+            return (
+                "The dataset contains "
+                f"{len(columns)} columns:\n\n"
+                + "\n".join(
+                    f"{i + 1}. {column}"
+                    for i, column
+                    in enumerate(columns)
+                )
+            )
+
+        # ------------------------------------------------------
+        # MISSING VALUES
+        # ------------------------------------------------------
+
+        missing_patterns = [
+            r"\bmissing values\b",
+            r"\bmissing data\b",
+            r"\bnull values\b",
+            r"\bnulls\b",
+            r"\bwhich columns.*missing\b",
+            r"\bcolumns.*missing\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in missing_patterns
+        ):
+
+            return self._fast_missing_values(
+                df
+            )
+
+        # ------------------------------------------------------
+        # DUPLICATES
+        # ------------------------------------------------------
+
+        duplicate_patterns = [
+            r"\bduplicate rows\b",
+            r"\bduplicates\b",
+            r"\bduplicated rows\b",
+            r"\bhow many duplicates\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in duplicate_patterns
+        ):
+
+            duplicates = int(
+                df.duplicated().sum()
+            )
+
+            return (
+                f"The dataset contains "
+                f"{duplicates:,} duplicate rows."
+            )
+
+        # ------------------------------------------------------
+        # DATA TYPES
+        # ------------------------------------------------------
+
+        datatype_patterns = [
+            r"\bdata types\b",
+            r"\bcolumn types\b",
+            r"\btypes of columns\b",
+            r"\bwhat type.*columns\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in datatype_patterns
+        ):
+
+            lines = []
+
+            for column in df.columns:
+
+                lines.append(
+                    f"• {column}: "
+                    f"{df[column].dtype}"
+                )
+
+            return (
+                "Column data types:\n\n"
+                + "\n".join(lines)
+            )
+
+        # ------------------------------------------------------
+        # NUMERIC COLUMNS
+        # ------------------------------------------------------
+
+        numeric_patterns = [
+            r"\bnumeric columns\b",
+            r"\bnumber columns\b",
+            r"\bwhich columns are numeric\b",
+            r"\bwhich columns contain numbers\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in numeric_patterns
+        ):
+
+            numeric = list(
+                df.select_dtypes(
+                    include="number"
+                ).columns
+            )
+
+            if not numeric:
+
+                return (
+                    "There are no numeric "
+                    "columns in the dataset."
+                )
+
+            return (
+                "Numeric columns:\n\n"
+                + "\n".join(
+                    f"• {column}"
+                    for column in numeric
+                )
+            )
+
+        # ------------------------------------------------------
+        # CATEGORICAL COLUMNS
+        # ------------------------------------------------------
+
+        categorical_patterns = [
+            r"\bcategorical columns\b",
+            r"\bwhich columns are categorical\b",
+            r"\bwhich columns contain categories\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in categorical_patterns
+        ):
+
+            categorical = list(
+                df.select_dtypes(
+                    include=[
+                        "object",
+                        "category"
+                    ]
+                ).columns
+            )
+
+            if not categorical:
+
+                return (
+                    "There are no categorical "
+                    "columns in the dataset."
+                )
+
+            return (
+                "Categorical columns:\n\n"
+                + "\n".join(
+                    f"• {column}"
+                    for column in categorical
+                )
+            )
+
+        # ------------------------------------------------------
+        # FILTERED TOTAL / SUM
+        # Examples:
+        # "What is the total quantity for South?"
+        # "What is the total unit price for North?"
+        # "Sum quantity for West"
+        # ------------------------------------------------------
+
+        filtered_total_match = re.search(
+            r"\b(?:total|sum of|sum)\s+"
+            r"(?:the\s+)?(.+?)\s+"
+            r"(?:for|of|in)\s+"
+            r"(.+?)(?:\?|$)",
+            question.lower().strip()
+        )
+
+        if filtered_total_match:
+
+            value_column_text = (
+                filtered_total_match.group(1)
+                .strip()
+            )
+
+            filter_value_text = (
+                filtered_total_match.group(2)
+                .strip()
+            )
+
+            # Find the numeric column
+            value_col = None
+
+            for col in numeric_columns:
+
+                col_clean = (
+                    str(col)
+                    .lower()
+                    .strip()
+                )
+
+                if (
+                    value_column_text == col_clean
+                    or value_column_text.rstrip("s")
+                    == col_clean.rstrip("s")
+                    or col_clean.rstrip("s")
+                    == value_column_text.rstrip("s")
+                ):
+                    value_col = col
+                    break
+
+            # Find the categorical column and value
+            filter_col = None
+            filter_value = None
+
+            for col in categorical_columns:
+
+                values = (
+                    df[col]
+                    .dropna()
+                    .astype(str)
+                    .unique()
+                )
+
+                for value in values:
+
+                    value_clean = (
+                        str(value)
+                        .lower()
+                        .strip()
+                    )
+
+                    if (
+                        filter_value_text == value_clean
+                        or filter_value_text in value_clean
+                        or value_clean in filter_value_text
+                    ):
+                        filter_col = col
+                        filter_value = value
+                        break
+
+                if filter_col:
+                    break
+
+            # Calculate filtered total
+            if value_col and filter_col:
+
+                filtered_df = df[
+                    df[filter_col]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    == str(filter_value).strip().lower()
+                ]
+
+                if not filtered_df.empty:
+
+                    total_value = filtered_df[value_col].sum()
+
+                    total_value = self._clean_number(
+                        total_value
+                    )
+
+                    return (
+                        f"The total {value_col} for "
+                        f"{filter_value} is "
+                        f"{total_value:,}."
+                    )
+
+                return (
+                    f"I couldn't find any records for "
+                    f"{filter_value}."
+                )
+
+        # ------------------------------------------------------
+        # TOTAL / SUM
+        # ------------------------------------------------------
+
+        if self._contains_any(
+            normalized,
+            [
+                "total",
+                "sum of",
+                "sum",
+            ]
+        ):
+
+            column = self._find_column_in_question(
+                df,
+                normalized
+            )
+
+            if column:
+
+                if pd.api.types.is_numeric_dtype(
+                    df[column]
+                ):
+
+                    value = df[
+                        column
+                    ].sum()
+
+                    value = self._clean_number(
+                        value
+                    )
+
+                    return (
+                        f"The total {column} "
+                        f"is {value:,}."
+                    )
+        # ---------------------------------------------------------
+        # GROUPED HIGHEST / LOWEST
+        # Example:
+        # "Which region has the highest quantity?"
+        # "Which category has the lowest sales?"
+        # ---------------------------------------------------------
+        group_match = re.search(
+            r"\bwhich\s+(.+?)\s+has\s+the\s+(highest|lowest|max|min|maximum|minimum)\s+(.+?)(?:\?|$)",
+            question.lower().strip()
+        )
+
+        if group_match:
+            group_column_text = group_match.group(1).strip()
+            direction = group_match.group(2)
+            value_column_text = group_match.group(3).strip()
+
+            # Find matching categorical column
+            group_col = None
+            for col in categorical_columns:
+                col_clean = str(col).lower().strip()
+
+                if (
+                    group_column_text == col_clean
+                    or group_column_text.rstrip("s") == col_clean.rstrip("s")
+                    or col_clean.rstrip("s") == group_column_text.rstrip("s")
+                ):
+                    group_col = col
+                    break
+
+            # Find matching numeric column
+            value_col = None
+            for col in numeric_columns:
+                col_clean = str(col).lower().strip()
+
+                if (
+                    value_column_text == col_clean
+                    or value_column_text.rstrip("s") == col_clean.rstrip("s")
+                    or col_clean.rstrip("s") == value_column_text.rstrip("s")
+                ):
+                    value_col = col
+                    break
+
+            if group_col and value_col:
+                grouped = (
+                    df.groupby(group_col, dropna=False)[value_col]
+                    .sum()
+                    .sort_values(
+                        ascending=direction in ["lowest", "min", "minimum"]
+                    )
+                )
+
+                if not grouped.empty:
+                    result_group = grouped.index[0]
+                    result_value = grouped.iloc[0]
+
+                    return (
+                        f"{result_group} has the "
+                        f"{'lowest' if direction in ['lowest', 'min', 'minimum'] else 'highest'} "
+                        f"{value_col}, with {result_value:,.0f}."
+                    )
+        # ------------------------------------------------------
+        # HIGHEST / MAXIMUM
+        # ------------------------------------------------------
+
+        if self._contains_any(
+            normalized,
+            [
+                "highest",
+                "maximum",
+                "max",
+                "largest",
+                "greatest",
+            ]
+        ):
+
+            column = self._find_column_in_question(
+                df,
+                normalized
+            )
+
+            if column:
+
+                if pd.api.types.is_numeric_dtype(
+                    df[column]
+                ):
+
+                    value = df[
+                        column
+                    ].max()
+
+                    value = self._clean_number(
+                        value
+                    )
+
+                    return (
+                        f"The highest {column} "
+                        f"is {value:,}."
+                    )
+
+        # ------------------------------------------------------
+        # LOWEST / MINIMUM
+        # ------------------------------------------------------
+
+        if self._contains_any(
+            normalized,
+            [
+                "lowest",
+                "minimum",
+                "min",
+                "smallest",
+            ]
+        ):
+
+            column = self._find_column_in_question(
+                df,
+                normalized
+            )
+
+            if column:
+
+                if pd.api.types.is_numeric_dtype(
+                    df[column]
+                ):
+
+                    value = df[
+                        column
+                    ].min()
+
+                    value = self._clean_number(
+                        value
+                    )
+
+                    return (
+                        f"The lowest {column} "
+                        f"is {value:,}."
+                    )
+
+        # ------------------------------------------------------
+        # UNIQUE COUNT
+        # ------------------------------------------------------
+
+        unique_patterns = [
+            r"\bhow many unique\b",
+            r"\bnumber of unique\b",
+            r"\bunique values\b",
+            r"\bdistinct values\b",
+        ]
+
+        if any(
+            re.search(
+                pattern,
+                normalized
+            )
+            for pattern in unique_patterns
+        ):
+
+            column = self._find_column_in_question(
+                df,
+                normalized
+            )
+
+            if column:
+
+                count = int(
+                    df[column]
+                    .nunique(
+                        dropna=True
+                    )
+                )
+
+                return (
+                    f"{column} contains "
+                    f"{count:,} unique values."
+                )
+
+        # ------------------------------------------------------
+        # TOP N
+        # ------------------------------------------------------
+
+        top_match = re.search(
+            r"\btop\s+(\d+)\b",
+            normalized
+        )
+
+        if top_match:
+
+            number = min(
+                int(
+                    top_match.group(1)
+                ),
+                50
+            )
+
+            column = self._find_column_in_question(
+                df,
+                normalized
+            )
+
+            if column and pd.api.types.is_numeric_dtype(
+                df[column]
+            ):
+
+                values = (
+                    df[column]
+                    .nlargest(number)
+                    .tolist()
+                )
+
+                lines = [
+                    f"{i + 1}. {self._clean_number(value):,}"
+                    for i, value
+                    in enumerate(values)
+                ]
+
+                return (
+                    f"Top {number} values "
+                    f"for {column}:\n\n"
+                    + "\n".join(lines)
+                )
+
+        # ------------------------------------------------------
+        # BOTTOM N
+        # ------------------------------------------------------
+
+        bottom_match = re.search(
+            r"\bbottom\s+(\d+)\b",
+            normalized
+        )
+
+        if bottom_match:
+
+            number = min(
+                int(
+                    bottom_match.group(1)
+                ),
+                50
+            )
+
+            column = self._find_column_in_question(
+                df,
+                normalized
+            )
+
+            if column and pd.api.types.is_numeric_dtype(
+                df[column]
+            ):
+
+                values = (
+                    df[column]
+                    .nsmallest(number)
+                    .tolist()
+                )
+
+                lines = [
+                    f"{i + 1}. {self._clean_number(value):,}"
+                    for i, value
+                    in enumerate(values)
+                ]
+
+                return (
+                    f"Bottom {number} values "
+                    f"for {column}:\n\n"
+                    + "\n".join(lines)
+                )
+
+        # ------------------------------------------------------
+        # Nothing matched.
+        #
+        # Let Qwen handle it.
+        # ------------------------------------------------------
+
+        return None
 
     # ==========================================================
-    # COLUMN DETECTION
+    # FAST MISSING VALUES
     # ==========================================================
 
-    def _find_column(self, df, question):
-        """
-        Dynamically identify a column from the user's question.
+    def _fast_missing_values(
+        self,
+        df: pd.DataFrame
+    ) -> str:
 
-        Priority:
-        1. Exact column name
-        2. Normalized exact match
-        3. Token overlap
-        4. Fuzzy matching
-        """
+        missing = df.isna().sum()
 
-        q = self._normalize(question)
+        total = int(
+            missing.sum()
+        )
 
-        columns = list(df.columns)
+        if total == 0:
 
-        if not columns:
-            return None
+            return (
+                "The dataset contains "
+                "no missing values."
+            )
 
-        # ------------------------------------------------------
-        # Exact original / normalized column names
-        # ------------------------------------------------------
+        lines = []
 
-        normalized_columns = {}
+        for column, count in missing.items():
 
-        for col in columns:
-            normalized_columns[col] = self._normalize_column(col)
+            if count > 0:
 
-        for col, normalized in normalized_columns.items():
+                lines.append(
+                    f"• {column}: {int(count)}"
+                )
 
-            if normalized and normalized in q:
-                return col
+        return (
+            f"The dataset contains "
+            f"{total:,} missing values.\n\n"
+            + "\n".join(lines)
+        )
 
-        # ------------------------------------------------------
-        # Token-based matching
-        # ------------------------------------------------------
+    # ==========================================================
+    # FIND COLUMN IN QUESTION
+    # ==========================================================
 
-        q_tokens = {
-            token
-            for token in q.split()
-            if token not in self.stop_words
-        }
+    def _find_column_in_question(
+        self,
+        df: pd.DataFrame,
+        question: str
+    ) -> Optional[str]:
+
+        normalized_question = self._normalize(
+            question
+        )
+
+        # Exact normalized column name
+        for column in df.columns:
+
+            normalized_column = self._normalize(
+                column
+            )
+
+            if not normalized_column:
+                continue
+
+            if normalized_column in normalized_question:
+
+                return column
+
+        # Token-based match
+        question_tokens = set(
+            normalized_question.split()
+        )
 
         best_column = None
         best_score = 0
 
-        for col, normalized in normalized_columns.items():
+        for column in df.columns:
 
-            column_tokens = set(normalized.split())
+            column_tokens = set(
+                self._normalize(
+                    column
+                ).split()
+            )
 
             if not column_tokens:
                 continue
 
-            overlap = q_tokens.intersection(column_tokens)
-
-            if overlap:
-                score = len(overlap) / len(column_tokens)
-
-                if score > best_score:
-                    best_score = score
-                    best_column = col
-
-        if best_column is not None and best_score >= 0.5:
-            return best_column
-
-        # ------------------------------------------------------
-        # Fuzzy matching
-        # ------------------------------------------------------
-
-        candidates = list(normalized_columns.values())
-
-        words = [
-            token
-            for token in q.split()
-            if token not in self.stop_words
-        ]
-
-        for word in words:
-
-            matches = difflib.get_close_matches(
-                word,
-                candidates,
-                n=1,
-                cutoff=0.75,
+            overlap = len(
+                question_tokens
+                & column_tokens
             )
 
-            if matches:
+            score = overlap / max(
+                len(column_tokens),
+                1
+            )
 
-                matched = matches[0]
+            if score > best_score:
 
-                for col, normalized in normalized_columns.items():
+                best_score = score
+                best_column = column
 
-                    if normalized == matched:
-                        return col
+        if best_score >= 0.5:
+
+            return best_column
 
         return None
 
     # ==========================================================
-    # NUMERIC COLUMN DETECTION
+    # TEXT HELPERS
     # ==========================================================
 
-    def _numeric_columns_list(self, df):
-        return list(df.select_dtypes(include="number").columns)
+    def _contains_any(
+        self,
+        text: str,
+        words
+    ) -> bool:
 
-    def _categorical_columns_list(self, df):
-        return list(
-            df.select_dtypes(
-                include=["object", "category", "bool"]
-            ).columns
+        for word in words:
+
+            if re.search(
+                rf"\b{re.escape(word)}\b",
+                text
+            ):
+
+                return True
+
+        return False
+
+    def _normalize(
+        self,
+        value: Any
+    ) -> str:
+
+        value = str(
+            value
+        ).lower().strip()
+
+        value = re.sub(
+            r"[^a-z0-9]+",
+            " ",
+            value
         )
 
-    def _find_numeric_column(self, df, question):
-        """
-        Find a numeric column mentioned in the question.
-        """
+        return re.sub(
+            r"\s+",
+            " ",
+            value
+        ).strip()
 
-        numeric_columns = self._numeric_columns_list(df)
+    # ==========================================================
+    # DATASET CONTEXT
+    # ==========================================================
 
-        if not numeric_columns:
+    def _dataset_context(
+        self,
+        df: pd.DataFrame
+    ) -> Dict[str, Any]:
+
+        columns = []
+
+        for column in df.columns:
+
+            series = df[column]
+
+            info = {
+                "name": str(column),
+                "dtype": str(series.dtype),
+                "numeric": bool(
+                    pd.api.types.is_numeric_dtype(
+                        series
+                    )
+                ),
+                "missing": int(
+                    series.isna().sum()
+                ),
+                "unique": int(
+                    series.nunique(
+                        dropna=True
+                    )
+                ),
+            }
+
+            if not pd.api.types.is_numeric_dtype(
+                series
+            ):
+
+                info[
+                    "sample_values"
+                ] = (
+                    series
+                    .dropna()
+                    .astype(str)
+                    .value_counts()
+                    .head(8)
+                    .index
+                    .tolist()
+                )
+
+            columns.append(
+                info
+            )
+
+        return {
+            "rows": int(
+                len(df)
+            ),
+            "columns": int(
+                len(df.columns)
+            ),
+            "column_information": columns,
+        }
+
+    # ==========================================================
+    # UNDERSTAND QUESTION WITH QWEN
+    # ==========================================================
+
+    def _understand_question(
+        self,
+        df: pd.DataFrame,
+        question: str
+    ) -> Dict[str, Any]:
+
+        context = self._dataset_context(
+            df
+        )
+
+        prompt = f"""
+You are the question-understanding component
+of InsightAI Offline.
+
+Understand the user's question about the dataset.
+
+Do NOT calculate anything.
+
+Do NOT write Python.
+
+Do NOT invent column names.
+
+Return ONLY valid JSON.
+
+DATASET:
+{json.dumps(
+    context,
+    indent=2,
+    default=str
+)}
+
+USER QUESTION:
+{question}
+
+Return exactly:
+
+{{
+    "intent": "rows|columns|missing|duplicates|data_types|unique_values|count|sum|average|median|minimum|maximum|group_analysis|percentage|top|bottom|correlation|summary|outliers|unknown",
+    "target_column": null,
+    "group_column": null,
+    "category_value": null,
+    "number": null,
+    "secondary_column": null
+}}
+
+Rules:
+
+- target_column must be an actual dataset column.
+- group_column must be an actual dataset column.
+- secondary_column must be an actual dataset column.
+- Use null if a column cannot be determined.
+- number is for requests such as top 5.
+- Use summary for broad questions.
+- Use unknown when the operation cannot be determined.
+"""
+
+        raw = self.llm.generate(
+            prompt
+        )
+
+        return self._parse_plan(
+            raw,
+            df
+        )
+
+    # ==========================================================
+    # PARSE PLAN
+    # ==========================================================
+
+    def _parse_plan(
+        self,
+        response: str,
+        df: pd.DataFrame
+    ) -> Dict[str, Any]:
+
+        default = {
+            "intent": "unknown",
+            "target_column": None,
+            "group_column": None,
+            "category_value": None,
+            "number": None,
+            "secondary_column": None,
+        }
+
+        if not response:
+
+            return default
+
+        response = response.strip()
+
+        response = re.sub(
+            r"```json\s*",
+            "",
+            response,
+            flags=re.IGNORECASE
+        )
+
+        response = re.sub(
+            r"```\s*$",
+            "",
+            response
+        )
+
+        match = re.search(
+            r"\{.*\}",
+            response,
+            flags=re.DOTALL
+        )
+
+        if not match:
+
+            return default
+
+        try:
+
+            plan = json.loads(
+                match.group(0)
+            )
+
+        except json.JSONDecodeError:
+
+            return default
+
+        valid_intents = {
+            "rows",
+            "columns",
+            "missing",
+            "duplicates",
+            "data_types",
+            "unique_values",
+            "count",
+            "sum",
+            "average",
+            "median",
+            "minimum",
+            "maximum",
+            "group_analysis",
+            "percentage",
+            "top",
+            "bottom",
+            "correlation",
+            "summary",
+            "outliers",
+            "unknown",
+        }
+
+        intent = str(
+            plan.get(
+                "intent",
+                "unknown"
+            )
+        ).lower().strip()
+
+        if intent not in valid_intents:
+
+            intent = "unknown"
+
+        plan["intent"] = intent
+
+        plan[
+            "target_column"
+        ] = self._match_column(
+            plan.get(
+                "target_column"
+            ),
+            df
+        )
+
+        plan[
+            "group_column"
+        ] = self._match_column(
+            plan.get(
+                "group_column"
+            ),
+            df
+        )
+
+        plan[
+            "secondary_column"
+        ] = self._match_column(
+            plan.get(
+                "secondary_column"
+            ),
+            df
+        )
+
+        return plan
+
+    # ==========================================================
+    # MATCH COLUMN
+    # ==========================================================
+
+    def _match_column(
+        self,
+        requested: Any,
+        df: pd.DataFrame
+    ) -> Optional[str]:
+
+        if requested is None:
+
             return None
 
-        # First try normal column matching.
-        column = self._find_column(df, question)
+        requested = str(
+            requested
+        ).strip()
 
-        if column in numeric_columns:
-            return column
+        if not requested:
 
-        # Try each numeric column independently.
-        q = self._normalize(question)
+            return None
+
+        normalized = self._normalize(
+            requested
+        )
+
+        for column in df.columns:
+
+            if self._normalize(
+                column
+            ) == normalized:
+
+                return column
+
+        requested_tokens = set(
+            normalized.split()
+        )
 
         best_column = None
         best_score = 0
 
-        for col in numeric_columns:
+        for column in df.columns:
 
-            normalized = self._normalize_column(col)
+            column_tokens = set(
+                self._normalize(
+                    column
+                ).split()
+            )
 
-            tokens = normalized.split()
+            if not column_tokens:
 
-            score = 0
-
-            for token in tokens:
-
-                if token in q.split():
-                    score += 1
-
-            if tokens:
-                ratio = score / len(tokens)
-
-                if ratio > best_score:
-                    best_score = ratio
-                    best_column = col
-
-        if best_score >= 0.5:
-            return best_column
-
-        # If only one numeric column exists, use it.
-        if len(numeric_columns) == 1:
-            return numeric_columns[0]
-
-        return None
-
-    # ==========================================================
-    # CATEGORY VALUE DETECTION
-    # ==========================================================
-
-    def _find_category_value(self, df, question, exclude_column=None):
-        """
-        Find an actual categorical value mentioned in the question.
-
-        Example:
-
-        Dataset:
-        Department = Sales, IT, HR
-
-        Question:
-        "What is the total salary for people in IT?"
-
-        Returns:
-        ("Department", "IT")
-        """
-
-        q = self._normalize(question)
-
-        categorical_columns = self._categorical_columns_list(df)
-
-        for col in categorical_columns:
-
-            if exclude_column and col == exclude_column:
                 continue
 
-            values = df[col].dropna().astype(str).unique()
-
-            # Prefer longer values first.
-            values = sorted(
-                values,
-                key=lambda x: len(str(x)),
-                reverse=True,
+            overlap = len(
+                requested_tokens
+                & column_tokens
             )
 
-            for value in values:
-
-                value_normalized = self._normalize(str(value))
-
-                if not value_normalized:
-                    continue
-
-                pattern = r"\b" + re.escape(value_normalized) + r"\b"
-
-                if re.search(pattern, q):
-                    return col, value
-
-        return None, None
-
-    # ==========================================================
-    # DATASET INFORMATION
-    # ==========================================================
-
-    def _column_names(self, df):
-        columns = list(df.columns)
-
-        if not columns:
-            return "The dataset has no columns."
-
-        lines = ["The dataset contains these columns:"]
-
-        for index, column in enumerate(columns, start=1):
-            lines.append(f"{index}. {column}")
-
-        return "\n".join(lines)
-
-    def _data_types(self, df):
-        lines = ["Column data types:"]
-
-        for column in df.columns:
-            dtype = str(df[column].dtype)
-
-            lines.append(
-                f"• {column}: {dtype}"
+            score = overlap / max(
+                len(requested_tokens),
+                len(column_tokens)
             )
 
-        return "\n".join(lines)
+            if score > best_score:
 
-    def _numeric_columns(self, df):
-        columns = self._numeric_columns_list(df)
+                best_score = score
+                best_column = column
 
-        if not columns:
-            return "There are no numeric columns in this dataset."
+        if best_score >= 0.5:
 
-        return (
-            "Numeric columns:\n"
-            + "\n".join(f"• {column}" for column in columns)
+            return best_column
+
+        return None
+
+    # ==========================================================
+    # VALIDATE PLAN
+    # ==========================================================
+
+    def _validate_plan(
+        self,
+        df: pd.DataFrame,
+        plan: Dict[str, Any]
+    ) -> Dict[str, Any]:
+
+        valid_columns = set(
+            df.columns
         )
 
-    def _categorical_columns(self, df):
-        columns = self._categorical_columns_list(df)
+        for key in [
+            "target_column",
+            "group_column",
+            "secondary_column",
+        ]:
 
-        if not columns:
-            return "There are no categorical columns in this dataset."
+            if plan.get(key) not in valid_columns:
 
-        return (
-            "Categorical columns:\n"
-            + "\n".join(f"• {column}" for column in columns)
+                plan[key] = None
+
+        number = plan.get(
+            "number"
         )
 
-    # ==========================================================
-    # MISSING VALUES
-    # ==========================================================
+        try:
 
-    def _missing_values(self, df):
-        missing = df.isna().sum()
+            if number is not None:
 
-        missing = missing[missing > 0]
-
-        if missing.empty:
-            return "There are no missing values in the dataset."
-
-        lines = ["Columns containing missing values:"]
-
-        for column, count in missing.items():
-            lines.append(
-                f"• {column}: {int(count):,} missing"
-            )
-
-        total = int(missing.sum())
-
-        lines.append("")
-        lines.append(
-            f"Total missing values: {total:,}"
-        )
-
-        return "\n".join(lines)
-
-    # ==========================================================
-    # DUPLICATES
-    # ==========================================================
-
-    def _duplicates(self, df):
-        count = int(df.duplicated().sum())
-
-        if count == 0:
-            return "There are no duplicate rows in the dataset."
-
-        return (
-            f"The dataset contains {count:,} duplicate rows."
-        )
-
-    # ==========================================================
-    # UNIQUE VALUES
-    # ==========================================================
-
-    def _unique_values(self, df, question):
-        column = self._find_column(df, question)
-
-        if not column:
-            categorical = self._categorical_columns_list(df)
-
-            if len(categorical) == 1:
-                column = categorical[0]
-
-        if not column:
-            return (
-                "I couldn't determine which column you want "
-                "the unique values for."
-            )
-
-        values = df[column].dropna().unique()
-
-        if len(values) == 0:
-            return f"The column '{column}' contains no non-empty values."
-
-        if len(values) > 30:
-            preview = values[:30]
-
-            return (
-                f"'{column}' contains {len(values):,} unique values.\n\n"
-                "First 30 values:\n"
-                + "\n".join(
-                    f"• {value}"
-                    for value in preview
-                )
-            )
-
-        return (
-            f"'{column}' contains {len(values):,} unique values:\n\n"
-            + "\n".join(
-                f"• {value}"
-                for value in values
-            )
-        )
-
-    # ==========================================================
-    # SUM
-    # ==========================================================
-
-    def _sum_analysis(self, df, question):
-        column = self._find_numeric_column(df, question)
-
-        if not column:
-            return None
-
-        data = df[column].dropna()
-
-        if data.empty:
-            return f"There are no numeric values available in '{column}'."
-
-        category_col, category_value = self._find_category_value(
-            df,
-            question,
-            exclude_column=column,
-        )
-
-        if category_col and category_value is not None:
-
-            filtered = df[
-                df[category_col].astype(str).str.lower()
-                == str(category_value).lower()
-            ]
-
-            values = pd.to_numeric(
-                filtered[column],
-                errors="coerce",
-            ).dropna()
-
-            if values.empty:
-                return (
-                    f"There are no numeric values in '{column}' "
-                    f"for {category_col} = {category_value}."
+                number = int(
+                    number
                 )
 
-            total = values.sum()
+                if number <= 0:
 
-            return (
-                f"The total {column} for "
-                f"{category_col} = {category_value} is "
-                f"{self._format_number(total)}."
+                    number = None
+
+                elif number > 50:
+
+                    number = 50
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            number = None
+
+        plan["number"] = number
+
+        return plan
+
+    # ==========================================================
+    # EXECUTE PLAN
+    # ==========================================================
+
+    def _execute_plan(
+        self,
+        df: pd.DataFrame,
+        plan: Dict[str, Any],
+        question: str
+    ) -> Optional[Dict[str, Any]]:
+
+        intent = plan.get(
+            "intent"
+        )
+
+        target = plan.get(
+            "target_column"
+        )
+
+        group = plan.get(
+            "group_column"
+        )
+
+        secondary = plan.get(
+            "secondary_column"
+        )
+
+        category = plan.get(
+            "category_value"
+        )
+
+        number = plan.get(
+            "number"
+        )
+
+        if intent == "rows":
+
+            return {
+                "type": "rows",
+                "rows": int(
+                    len(df)
+                )
+            }
+
+        if intent == "columns":
+
+            return {
+                "type": "columns",
+                "columns": list(
+                    df.columns
+                )
+            }
+
+        if intent == "missing":
+
+            return self._missing_values(
+                df
             )
 
-        total = pd.to_numeric(
-            data,
-            errors="coerce",
-        ).sum()
+        if intent == "duplicates":
 
-        return (
-            f"The total {column} is "
-            f"{self._format_number(total)}."
-        )
+            return {
+                "type": "duplicates",
+                "duplicates": int(
+                    df.duplicated().sum()
+                )
+            }
 
-    # ==========================================================
-    # MEAN
-    # ==========================================================
+        if intent == "data_types":
 
-    def _mean_analysis(self, df, question):
-        column = self._find_numeric_column(df, question)
+            return {
+                "type": "data_types",
+                "data_types": {
+                    str(column): str(
+                        df[column].dtype
+                    )
+                    for column in df.columns
+                }
+            }
 
-        if not column:
-            return None
+        if intent == "unique_values":
 
-        values = pd.to_numeric(
-            df[column],
-            errors="coerce",
-        ).dropna()
+            if not target:
 
-        if values.empty:
-            return None
-
-        category_col, category_value = self._find_category_value(
-            df,
-            question,
-            exclude_column=column,
-        )
-
-        if category_col and category_value is not None:
-
-            filtered = df[
-                df[category_col].astype(str).str.lower()
-                == str(category_value).lower()
-            ]
-
-            values = pd.to_numeric(
-                filtered[column],
-                errors="coerce",
-            ).dropna()
-
-            if values.empty:
                 return None
 
-            result = values.mean()
-
-            return (
-                f"The average {column} for "
-                f"{category_col} = {category_value} is "
-                f"{self._format_number(result)}."
+            values = (
+                df[target]
+                .dropna()
+                .unique()
+                .tolist()
             )
 
-        result = values.mean()
+            return {
+                "type": "unique_values",
+                "column": target,
+                "count": len(values),
+                "values": values[:100]
+            }
 
-        return (
-            f"The average {column} is "
-            f"{self._format_number(result)}."
-        )
+        if intent == "count":
 
-    # ==========================================================
-    # MEDIAN
-    # ==========================================================
+            if not target:
 
-    def _median_analysis(self, df, question):
-        column = self._find_numeric_column(df, question)
+                return {
+                    "type": "rows",
+                    "rows": int(
+                        len(df)
+                    )
+                }
 
-        if not column:
-            return None
-
-        values = pd.to_numeric(
-            df[column],
-            errors="coerce",
-        ).dropna()
-
-        if values.empty:
-            return None
-
-        result = values.median()
-
-        return (
-            f"The median {column} is "
-            f"{self._format_number(result)}."
-        )
-
-    # ==========================================================
-    # MODE / MOST COMMON
-    # ==========================================================
-
-    def _mode_analysis(self, df, question):
-        column = self._find_column(df, question)
-
-        if not column:
-            categorical = self._categorical_columns_list(df)
-
-            if len(categorical) == 1:
-                column = categorical[0]
-
-        if not column:
-            return None
-
-        values = df[column].dropna()
-
-        if values.empty:
-            return None
-
-        mode = values.mode()
-
-        if mode.empty:
-            return None
-
-        if len(mode) == 1:
-            return (
-                f"The most common value in '{column}' is "
-                f"'{mode.iloc[0]}'."
-            )
-
-        return (
-            f"The most common values in '{column}' are: "
-            + ", ".join(
-                str(value)
-                for value in mode
-            )
-            + "."
-        )
-
-    # ==========================================================
-    # MAXIMUM
-    # ==========================================================
-
-    def _max_analysis(self, df, question):
-        column = self._find_numeric_column(df, question)
-
-        if not column:
-            return None
-
-        values = pd.to_numeric(
-            df[column],
-            errors="coerce",
-        ).dropna()
-
-        if values.empty:
-            return None
-
-        maximum = values.max()
-
-        row = df.loc[
-            pd.to_numeric(
-                df[column],
-                errors="coerce",
-            ).idxmax()
-        ]
-
-        category_col, category_value = self._find_category_value(
-            df,
-            question,
-            exclude_column=column,
-        )
-
-        if category_col and category_value is not None:
-
-            filtered = df[
-                df[category_col].astype(str).str.lower()
-                == str(category_value).lower()
-            ]
-
-            filtered_values = pd.to_numeric(
-                filtered[column],
-                errors="coerce",
-            ).dropna()
-
-            if not filtered_values.empty:
-
-                maximum = filtered_values.max()
-
-                return (
-                    f"The highest {column} for "
-                    f"{category_col} = {category_value} is "
-                    f"{self._format_number(maximum)}."
+            return {
+                "type": "count",
+                "column": target,
+                "count": int(
+                    df[target].count()
                 )
+            }
 
-        return (
-            f"The highest {column} is "
-            f"{self._format_number(maximum)}."
-        )
+        if intent == "sum":
 
-    # ==========================================================
-    # MINIMUM
-    # ==========================================================
-
-    def _min_analysis(self, df, question):
-        column = self._find_numeric_column(df, question)
-
-        if not column:
-            return None
-
-        values = pd.to_numeric(
-            df[column],
-            errors="coerce",
-        ).dropna()
-
-        if values.empty:
-            return None
-
-        minimum = values.min()
-
-        return (
-            f"The lowest {column} is "
-            f"{self._format_number(minimum)}."
-        )
-
-    # ==========================================================
-    # COUNT
-    # ==========================================================
-
-    def _count_analysis(self, df, question):
-        """
-        Handles questions such as:
-
-        How many employees?
-        How many products?
-        How many are female?
-        How many sales are in Lagos?
-        Count the records where Department is IT.
-        """
-
-        category_col, category_value = self._find_category_value(
-            df,
-            question,
-        )
-
-        if category_col and category_value is not None:
-
-            filtered = df[
-                df[category_col].astype(str).str.lower()
-                == str(category_value).lower()
-            ]
-
-            return (
-                f"There are {len(filtered):,} rows where "
-                f"{category_col} = {category_value}."
+            target = self._ensure_numeric_column(
+                df,
+                target
             )
 
-        column = self._find_column(df, question)
+            if not target:
 
-        if column:
+                return None
 
-            count = int(df[column].notna().sum())
+            return {
+                "type": "sum",
+                "column": target,
+                "value": self._clean_number(
+                    df[target].sum()
+                )
+            }
 
-            return (
-                f"'{column}' contains "
-                f"{count:,} non-empty values."
+        if intent == "average":
+
+            target = self._ensure_numeric_column(
+                df,
+                target
             )
 
-        return (
-            f"The dataset contains {len(df):,} rows."
-        )
+            if not target:
 
-    # ==========================================================
-    # PERCENTAGE
-    # ==========================================================
+                return None
 
-    def _percentage_analysis(self, df, question):
-        category_col, category_value = self._find_category_value(
-            df,
-            question,
-        )
+            return {
+                "type": "average",
+                "column": target,
+                "value": self._clean_number(
+                    df[target].mean()
+                )
+            }
 
-        if category_col and category_value is not None:
+        if intent == "median":
 
-            matching = (
-                df[category_col].astype(str).str.lower()
-                == str(category_value).lower()
+            target = self._ensure_numeric_column(
+                df,
+                target
             )
 
-            percentage = (
-                matching.sum()
-                / len(df)
-                * 100
+            if not target:
+
+                return None
+
+            return {
+                "type": "median",
+                "column": target,
+                "value": self._clean_number(
+                    df[target].median()
+                )
+            }
+
+        if intent == "minimum":
+
+            target = self._ensure_numeric_column(
+                df,
+                target
             )
 
-            return (
-                f"{category_value} represents "
-                f"{percentage:.2f}% of the dataset "
-                f"({matching.sum():,} out of {len(df):,} rows)."
+            if not target:
+
+                return None
+
+            return {
+                "type": "minimum",
+                "column": target,
+                "value": self._clean_number(
+                    df[target].min()
+                )
+            }
+
+        if intent == "maximum":
+
+            target = self._ensure_numeric_column(
+                df,
+                target
             )
 
-        # Percentage of a column that is non-empty
-        column = self._find_column(df, question)
+            if not target:
 
-        if column:
+                return None
 
-            non_empty = int(df[column].notna().sum())
+            return {
+                "type": "maximum",
+                "column": target,
+                "value": self._clean_number(
+                    df[target].max()
+                )
+            }
 
-            percentage = (
-                non_empty
-                / len(df)
-                * 100
+        if intent == "group_analysis":
+
+            return self._group_analysis(
+                df,
+                target,
+                group
             )
 
-            return (
-                f"{percentage:.2f}% of the values in "
-                f"'{column}' are non-empty."
+        if intent == "percentage":
+
+            return self._percentage_analysis(
+                df,
+                target,
+                category
+            )
+
+        if intent in {
+            "top",
+            "bottom"
+        }:
+
+            return self._ranking_analysis(
+                df,
+                target,
+                group,
+                number,
+                intent
+            )
+
+        if intent == "correlation":
+
+            return self._correlation_analysis(
+                df,
+                target,
+                secondary
+            )
+
+        if intent == "outliers":
+
+            return self._outlier_analysis(
+                df,
+                target
+            )
+
+        if intent == "summary":
+
+            return self._summary_analysis(
+                df
             )
 
         return None
+
+    # ==========================================================
+    # NUMERIC COLUMN
+    # ==========================================================
+
+    def _ensure_numeric_column(
+        self,
+        df: pd.DataFrame,
+        column: Optional[str]
+    ) -> Optional[str]:
+
+        if column and column in df.columns:
+
+            if pd.api.types.is_numeric_dtype(
+                df[column]
+            ):
+
+                return column
+
+        numeric = list(
+            df.select_dtypes(
+                include="number"
+            ).columns
+        )
+
+        if numeric:
+
+            return numeric[0]
+
+        return None
+
+    # ==========================================================
+    # NUMBER CLEANING
+    # ==========================================================
+
+    def _clean_number(
+        self,
+        value
+    ):
+
+        try:
+
+            value = float(
+                value
+            )
+
+            if value.is_integer():
+
+                return int(
+                    value
+                )
+
+            return round(
+                value,
+                2
+            )
+
+        except Exception:
+
+            return value
+
+    # ==========================================================
+    # MISSING
+    # ==========================================================
+
+    def _missing_values(
+        self,
+        df: pd.DataFrame
+    ) -> Dict[str, Any]:
+
+        missing = df.isna().sum()
+
+        columns = {
+            str(column): int(value)
+            for column, value
+            in missing.items()
+            if value > 0
+        }
+
+        return {
+            "type": "missing",
+            "columns": columns,
+            "total": int(
+                missing.sum()
+            )
+        }
 
     # ==========================================================
     # GROUP ANALYSIS
     # ==========================================================
 
-    def _is_group_question(self, question):
-        return self._contains_any(
-            question,
-            [
-                "by",
-                "per",
-                "for each",
-                "grouped by",
-                "group by",
-                "compare",
-                "breakdown",
-                "break down",
-                "according to",
-            ],
-        )
+    def _group_analysis(
+        self,
+        df: pd.DataFrame,
+        target: Optional[str],
+        group: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
 
-    def _group_analysis(self, df, question):
-        numeric_columns = self._numeric_columns_list(df)
-        categorical_columns = self._categorical_columns_list(df)
+        if not group:
 
-        if not categorical_columns:
+            categorical = list(
+                df.select_dtypes(
+                    include=[
+                        "object",
+                        "category"
+                    ]
+                ).columns
+            )
+
+            if categorical:
+
+                group = categorical[0]
+
+        if not group:
+
             return None
 
-        # ------------------------------------------------------
-        # Detect grouping column.
-        # ------------------------------------------------------
+        target = (
+            self._ensure_numeric_column(
+                df,
+                target
+            )
+            if target
+            else None
+        )
 
-        group_column = None
+        if target:
 
-        # Try column mentioned after "by"
-        patterns = [
-            r"\bby\s+(.+?)(?:$|,|\?| for | with )",
-            r"\bper\s+(.+?)(?:$|,|\?| for | with )",
-            r"\bgrouped by\s+(.+?)(?:$|,|\?| for | with )",
-        ]
+            grouped = (
+                df.groupby(
+                    group,
+                    dropna=False
+                )[target]
+                .agg([
+                    "count",
+                    "sum",
+                    "mean",
+                    "min",
+                    "max"
+                ])
+                .round(2)
+                .reset_index()
+            )
 
-        for pattern in patterns:
-
-            match = re.search(pattern, question)
-
-            if match:
-
-                candidate = match.group(1).strip()
-
-                group_column = self._find_column(
-                    df,
-                    candidate,
+            return {
+                "type": "group_analysis",
+                "group_column": group,
+                "target_column": target,
+                "results": grouped.to_dict(
+                    orient="records"
                 )
-
-                if group_column in categorical_columns:
-                    break
-
-                group_column = None
-
-        # Generic column detection
-        if not group_column:
-
-            for column in categorical_columns:
-
-                normalized = self._normalize_column(column)
-
-                if normalized in question:
-                    group_column = column
-                    break
-
-        # If only one categorical column exists
-        if not group_column and len(categorical_columns) == 1:
-            group_column = categorical_columns[0]
-
-        if not group_column:
-            return None
-
-        # ------------------------------------------------------
-        # Detect numeric metric.
-        # ------------------------------------------------------
-
-        metric_column = self._find_numeric_column(
-            df,
-            question,
-        )
-
-        if not metric_column and numeric_columns:
-            metric_column = numeric_columns[0]
-
-        if not metric_column:
-            return None
+            }
 
         grouped = (
-            df.groupby(group_column)[metric_column]
-            .agg(["count", "sum", "mean"])
-            .sort_values("sum", ascending=False)
+            df[group]
+            .value_counts(
+                dropna=False
+            )
+            .reset_index()
         )
 
-        if grouped.empty:
-            return None
-
-        lines = [
-            f"Analysis of '{metric_column}' by '{group_column}':",
-            "",
+        grouped.columns = [
+            group,
+            "count"
         ]
 
-        for index, row in grouped.head(20).iterrows():
+        return {
+            "type": "group_count",
+            "group_column": group,
+            "results": grouped.to_dict(
+                orient="records"
+            )
+        }
 
-            lines.append(
-                f"• {index}: "
-                f"count={int(row['count']):,}, "
-                f"total={self._format_number(row['sum'])}, "
-                f"average={self._format_number(row['mean'])}"
+    # ==========================================================
+    # PERCENTAGE
+    # ==========================================================
+
+    def _percentage_analysis(
+        self,
+        df: pd.DataFrame,
+        target: Optional[str],
+        category: Any
+    ) -> Optional[Dict[str, Any]]:
+
+        if not target:
+
+            return None
+
+        values = df[
+            target
+        ].dropna()
+
+        if values.empty:
+
+            return None
+
+        if category is not None:
+
+            category_text = str(
+                category
+            ).strip().lower()
+
+            matches = (
+                values.astype(str)
+                .str.lower()
+                == category_text
             )
 
-        if len(grouped) > 20:
-            lines.append("")
-            lines.append(
-                f"Showing the first 20 of {len(grouped):,} groups."
+            count = int(
+                matches.sum()
             )
 
-        return "\n".join(lines)
+            percentage = (
+                count
+                / len(values)
+            ) * 100
+
+            return {
+                "type": "percentage",
+                "column": target,
+                "category": category,
+                "count": count,
+                "total": len(values),
+                "percentage": round(
+                    percentage,
+                    2
+                )
+            }
+
+        distribution = (
+            values.value_counts(
+                normalize=True
+            )
+            .mul(100)
+            .round(2)
+        )
+
+        return {
+            "type": "percentage_distribution",
+            "column": target,
+            "results": distribution.to_dict()
+        }
 
     # ==========================================================
     # TOP / BOTTOM
     # ==========================================================
 
-    def _is_top_bottom_question(self, question):
-        return self._contains_any(
-            question,
-            [
-                "top",
-                "highest",
-                "largest",
-                "bottom",
-                "lowest",
-                "smallest",
-                "best",
-                "worst",
-            ],
-        )
+    def _ranking_analysis(
+        self,
+        df: pd.DataFrame,
+        target: Optional[str],
+        group: Optional[str],
+        number: Any,
+        direction: str
+    ) -> Optional[Dict[str, Any]]:
 
-    def _extract_number(self, question):
-        patterns = [
-            r"\b(?:top|bottom|first|last)\s+(\d+)\b",
-            r"\b(\d+)\s+(?:highest|lowest|largest|smallest)\b",
-            r"\btop\s+(\d+)",
-            r"\bbottom\s+(\d+)",
-        ]
+        limit = number or 5
 
-        for pattern in patterns:
+        try:
 
-            match = re.search(pattern, question)
-
-            if match:
-                return int(match.group(1))
-
-        return 5
-
-    def _top_bottom_analysis(self, df, question):
-        number = self._extract_number(question)
-
-        column = self._find_numeric_column(df, question)
-
-        if not column:
-            return None
-
-        ascending = self._contains_any(
-            question,
-            [
-                "bottom",
-                "lowest",
-                "smallest",
-                "worst",
-            ],
-        )
-
-        result = df.sort_values(
-            by=column,
-            ascending=ascending,
-        ).head(number)
-
-        if result.empty:
-            return None
-
-        direction = "lowest" if ascending else "highest"
-
-        lines = [
-            f"Top {number} rows by '{column}' ({direction}):",
-            "",
-        ]
-
-        for index, row in result.iterrows():
-
-            value = row[column]
-
-            lines.append(
-                f"• Row {index}: "
-                f"{self._format_number(value)}"
+            limit = int(
+                limit
             )
 
-        return "\n".join(lines)
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            limit = 5
+
+        limit = max(
+            1,
+            min(limit, 50)
+        )
+
+        if group:
+
+            target = self._ensure_numeric_column(
+                df,
+                target
+            )
+
+            if not target:
+
+                return None
+
+            grouped = (
+                df.groupby(
+                    group,
+                    dropna=False
+                )[target]
+                .sum()
+                .sort_values(
+                    ascending=(
+                        direction == "bottom"
+                    )
+                )
+                .head(limit)
+                .round(2)
+            )
+
+            return {
+                "type": direction,
+                "column": target,
+                "group_column": group,
+                "results": grouped.to_dict()
+            }
+
+        target = self._ensure_numeric_column(
+            df,
+            target
+        )
+
+        if not target:
+
+            return None
+
+        sorted_df = df.sort_values(
+            target,
+            ascending=(
+                direction == "bottom"
+            )
+        )
+
+        result = sorted_df[
+            [target]
+        ].head(limit)
+
+        return {
+            "type": direction,
+            "column": target,
+            "results": result[
+                target
+            ].tolist()
+        }
 
     # ==========================================================
     # CORRELATION
     # ==========================================================
 
-    def _correlation_analysis(self, df, question):
-        numeric = self._numeric_columns_list(df)
+    def _correlation_analysis(
+        self,
+        df: pd.DataFrame,
+        target: Optional[str],
+        secondary: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
 
-        if len(numeric) < 2:
-            return (
-                "Correlation requires at least two numeric columns."
+        numeric = list(
+            df.select_dtypes(
+                include="number"
+            ).columns
+        )
+
+        if target not in numeric:
+
+            target = (
+                numeric[0]
+                if numeric
+                else None
             )
 
-        mentioned = []
+        if secondary not in numeric:
 
-        for column in numeric:
+            secondary = (
+                numeric[1]
+                if len(numeric) > 1
+                else None
+            )
 
-            normalized = self._normalize_column(column)
+        if not target or not secondary:
 
-            if normalized in question:
-                mentioned.append(column)
-
-        if len(mentioned) >= 2:
-            first = mentioned[0]
-            second = mentioned[1]
-
-        else:
-            first = numeric[0]
-            second = numeric[1]
-
-        values = df[[first, second]].apply(
-            pd.to_numeric,
-            errors="coerce",
-        ).dropna()
-
-        if len(values) < 2:
-            return "There are not enough valid values to calculate correlation."
-
-        correlation = values[first].corr(values[second])
-
-        strength = self._correlation_strength(correlation)
-
-        direction = (
-            "positive"
-            if correlation > 0
-            else "negative"
-            if correlation < 0
-            else "no"
-        )
-
-        return (
-            f"The correlation between '{first}' and '{second}' "
-            f"is {correlation:.3f}.\n\n"
-            f"This indicates a {strength} {direction} linear relationship."
-        )
-
-    def _correlation_strength(self, value):
-        absolute = abs(value)
-
-        if absolute >= 0.8:
-            return "strong"
-
-        if absolute >= 0.5:
-            return "moderate"
-
-        if absolute >= 0.3:
-            return "weak"
-
-        return "very weak"
-
-    # ==========================================================
-    # SHOW VALUES
-    # ==========================================================
-
-    def _show_values(self, df, question):
-        column = self._find_column(df, question)
-
-        if not column:
             return None
 
-        values = df[column].dropna().unique()
-
-        if len(values) > 30:
-            values = values[:30]
-
-        return (
-            f"Values in '{column}':\n"
-            + "\n".join(
-                f"• {value}"
-                for value in values
-            )
+        value = df[
+            target
+        ].corr(
+            df[secondary]
         )
 
+        if pd.isna(value):
+
+            return None
+
+        return {
+            "type": "correlation",
+            "column_1": target,
+            "column_2": secondary,
+            "value": round(
+                float(value),
+                4
+            )
+        }
+
     # ==========================================================
-    # GENERIC COLUMN ANSWER
+    # OUTLIERS
     # ==========================================================
 
-    def _generic_column_answer(self, df, column, question):
-        series = df[column]
+    def _outlier_analysis(
+        self,
+        df: pd.DataFrame,
+        target: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
 
-        if pd.api.types.is_numeric_dtype(series):
+        target = self._ensure_numeric_column(
+            df,
+            target
+        )
 
-            values = pd.to_numeric(
-                series,
-                errors="coerce",
-            ).dropna()
+        if not target:
 
-            if values.empty:
+            return None
+
+        series = df[
+            target
+        ].dropna()
+
+        if series.empty:
+
+            return None
+
+        q1 = series.quantile(
+            0.25
+        )
+
+        q3 = series.quantile(
+            0.75
+        )
+
+        iqr = q3 - q1
+
+        lower = q1 - (
+            1.5 * iqr
+        )
+
+        upper = q3 + (
+            1.5 * iqr
+        )
+
+        outliers = series[
+            (series < lower)
+            | (series > upper)
+        ]
+
+        return {
+            "type": "outliers",
+            "column": target,
+            "count": int(
+                len(outliers)
+            ),
+            "lower_bound": round(
+                float(lower),
+                2
+            ),
+            "upper_bound": round(
+                float(upper),
+                2
+            ),
+            "values": outliers.tolist()[
+                :50
+            ]
+        }
+
+    # ==========================================================
+    # SUMMARY
+    # ==========================================================
+
+    def _summary_analysis(
+        self,
+        df: pd.DataFrame
+    ) -> Dict[str, Any]:
+
+        numeric = df.select_dtypes(
+            include="number"
+        )
+
+        categorical = df.select_dtypes(
+            include=[
+                "object",
+                "category"
+            ]
+        )
+
+        return {
+            "type": "summary",
+            "rows": int(
+                len(df)
+            ),
+            "columns": int(
+                len(df.columns)
+            ),
+            "numeric_columns": list(
+                numeric.columns
+            ),
+            "categorical_columns": list(
+                categorical.columns
+            ),
+            "missing_values": int(
+                df.isna().sum().sum()
+            ),
+            "duplicates": int(
+                df.duplicated().sum()
+            )
+        }
+
+    # ==========================================================
+    # SIMPLE RESULT CHECK
+    # ==========================================================
+
+    def _is_simple_result(
+        self,
+        result: Dict[str, Any]
+    ) -> bool:
+
+        return result.get(
+            "type"
+        ) in {
+            "rows",
+            "columns",
+            "missing",
+            "duplicates",
+            "data_types",
+            "unique_values",
+            "count",
+            "sum",
+            "average",
+            "median",
+            "minimum",
+            "maximum",
+            "percentage",
+            "percentage_distribution",
+            "top",
+            "bottom",
+            "correlation",
+            "outliers",
+        }
+
+    # ==========================================================
+    # FORMAT RESULT
+    # ==========================================================
+
+    def _format_result(
+        self,
+        result: Dict[str, Any]
+    ) -> str:
+
+        result_type = result.get(
+            "type"
+        )
+
+        if result_type == "rows":
+
+            return (
+                f"The dataset contains "
+                f"{result['rows']:,} rows."
+            )
+
+        if result_type == "columns":
+
+            columns = result[
+                "columns"
+            ]
+
+            return (
+                "The dataset contains "
+                f"{len(columns)} columns:\n\n"
+                + "\n".join(
+                    f"{i + 1}. {column}"
+                    for i, column
+                    in enumerate(columns)
+                )
+            )
+
+        if result_type == "missing":
+
+            if result["total"] == 0:
+
                 return (
-                    f"'{column}' is numeric, but it contains "
-                    "no usable numeric values."
+                    "The dataset contains "
+                    "no missing values."
+                )
+
+            lines = [
+                f"• {column}: {count}"
+                for column, count
+                in result[
+                    "columns"
+                ].items()
+            ]
+
+            return (
+                f"The dataset contains "
+                f"{result['total']:,} "
+                "missing values.\n\n"
+                + "\n".join(lines)
+            )
+
+        if result_type == "duplicates":
+
+            return (
+                f"The dataset contains "
+                f"{result['duplicates']:,} "
+                "duplicate rows."
+            )
+
+        if result_type == "data_types":
+
+            lines = [
+                f"• {column}: {dtype}"
+                for column, dtype
+                in result[
+                    "data_types"
+                ].items()
+            ]
+
+            return (
+                "Column data types:\n\n"
+                + "\n".join(lines)
+            )
+
+        if result_type == "unique_values":
+
+            values = result[
+                "values"
+            ]
+
+            preview = ", ".join(
+                str(value)
+                for value in values[:30]
+            )
+
+            if len(values) > 30:
+
+                preview += ", ..."
+
+            return (
+                f"{result['column']} contains "
+                f"{result['count']:,} "
+                "unique values.\n\n"
+                f"Values: {preview}"
+            )
+
+        if result_type == "count":
+
+            return (
+                f"{result['column']} contains "
+                f"{result['count']:,} "
+                "non-missing values."
+            )
+
+        if result_type == "sum":
+
+            return (
+                f"The total {result['column']} "
+                f"is {result['value']:,}."
+            )
+
+        if result_type == "average":
+
+            return (
+                f"The average {result['column']} "
+                f"is {result['value']:,}."
+            )
+
+        if result_type == "median":
+
+            return (
+                f"The median {result['column']} "
+                f"is {result['value']:,}."
+            )
+
+        if result_type == "minimum":
+
+            return (
+                f"The minimum {result['column']} "
+                f"is {result['value']:,}."
+            )
+
+        if result_type == "maximum":
+
+            return (
+                f"The maximum {result['column']} "
+                f"is {result['value']:,}."
+            )
+
+        if result_type == "percentage":
+
+            return (
+                f"{result['category']} accounts for "
+                f"{result['percentage']}% of "
+                f"{result['column']} "
+                f"({result['count']} out of "
+                f"{result['total']} records)."
+            )
+
+        if result_type == "percentage_distribution":
+
+            lines = [
+                f"• {value}: {percentage}%"
+                for value, percentage
+                in result[
+                    "results"
+                ].items()
+            ]
+
+            return (
+                f"Percentage distribution for "
+                f"{result['column']}:\n\n"
+                + "\n".join(lines)
+            )
+
+        if result_type == "top":
+
+            if result.get(
+                "group_column"
+            ):
+
+                lines = [
+                    f"• {key}: {value:,}"
+                    for key, value
+                    in result[
+                        "results"
+                    ].items()
+                ]
+
+                return (
+                    f"Top {len(lines)} "
+                    f"{result['group_column']} "
+                    f"by {result['column']}:\n\n"
+                    + "\n".join(lines)
+                )
+
+            values = result[
+                "results"
+            ]
+
+            return (
+                f"Top {len(values)} values "
+                f"for {result['column']}:\n\n"
+                + "\n".join(
+                    f"• {value:,}"
+                    for value in values
+                )
+            )
+
+        if result_type == "bottom":
+
+            if result.get(
+                "group_column"
+            ):
+
+                lines = [
+                    f"• {key}: {value:,}"
+                    for key, value
+                    in result[
+                        "results"
+                    ].items()
+                ]
+
+                return (
+                    f"Bottom {len(lines)} "
+                    f"{result['group_column']} "
+                    f"by {result['column']}:\n\n"
+                    + "\n".join(lines)
+                )
+
+            values = result[
+                "results"
+            ]
+
+            return (
+                f"Bottom {len(values)} values "
+                f"for {result['column']}:\n\n"
+                + "\n".join(
+                    f"• {value:,}"
+                    for value in values
+                )
+            )
+
+        if result_type == "correlation":
+
+            value = result[
+                "value"
+            ]
+
+            if value > 0:
+
+                direction = "positive"
+
+            elif value < 0:
+
+                direction = "negative"
+
+            else:
+
+                direction = "no"
+
+            return (
+                f"The correlation between "
+                f"{result['column_1']} and "
+                f"{result['column_2']} is "
+                f"{value} "
+                f"({direction} correlation)."
+            )
+
+        if result_type == "outliers":
+
+            if result["count"] == 0:
+
+                return (
+                    f"No outliers were detected "
+                    f"in {result['column']} using "
+                    "the IQR method."
                 )
 
             return (
-                f"'{column}' is a numeric column.\n"
-                f"Non-empty values: {len(values):,}\n"
-                f"Minimum: {self._format_number(values.min())}\n"
-                f"Maximum: {self._format_number(values.max())}\n"
-                f"Unique values: {values.nunique():,}"
+                f"{result['count']} outlier(s) were "
+                f"detected in {result['column']} "
+                "using the IQR method.\n\n"
+                f"Lower bound: "
+                f"{result['lower_bound']}\n"
+                f"Upper bound: "
+                f"{result['upper_bound']}\n"
+                f"Outlier values: "
+                f"{result['values']}"
             )
 
-        values = series.dropna()
+        return str(
+            result
+        )
 
-        return (
-            f"'{column}' contains {len(values):,} non-empty values "
-            f"and {values.nunique():,} unique values."
+    # ==========================================================
+    # EXPLAIN COMPLEX RESULT
+    # ==========================================================
+
+    def _explain_result(
+        self,
+        question: str,
+        result: Dict[str, Any]
+    ) -> str:
+
+        prompt = f"""
+You are InsightAI, an offline data-analysis assistant.
+
+Answer the user's question using ONLY the verified
+Pandas result below.
+
+Do not invent numbers.
+
+Do not invent columns.
+
+Do not make causal claims.
+
+Give a concise and useful interpretation.
+
+USER QUESTION:
+{question}
+
+VERIFIED PANDAS RESULT:
+{json.dumps(
+    result,
+    indent=2,
+    default=str
+)}
+
+Return only the answer.
+"""
+
+        try:
+
+            answer = self.llm.generate(
+                prompt
+            )
+
+            if answer:
+
+                return answer.strip()
+
+        except Exception as e:
+
+            print(
+                "Explanation error:",
+                repr(e)
+            )
+
+        return self._format_result(
+            result
         )
 
     # ==========================================================
     # FALLBACK
     # ==========================================================
 
-    def _fallback(self, df):
-        numeric = self._numeric_columns_list(df)
-        categorical = self._categorical_columns_list(df)
+    def _fallback_answer(
+        self,
+        df: pd.DataFrame,
+        question: str
+    ) -> str:
 
-        lines = [
-            "I couldn't determine the exact analysis you want.",
-            "",
-            "I can analyze this dataset using questions such as:",
-            "",
-            "• How many rows are there?",
-            "• Which columns have missing values?",
-            "• What are the column names?",
-            "• What is the total [numeric column]?",
-            "• What is the highest [numeric column]?",
-            "• What is the lowest [numeric column]?",
-            "• What is the average [numeric column]?",
-            "• What is the median [numeric column]?",
-            "• What is the most common [categorical column]?",
-            "• Show [numeric column] by [categorical column].",
-            "• What percentage is [category value]?",
-            "• What is the correlation between [column 1] and [column 2]?",
-            "• Show the top 5 [numeric column] values.",
-            "",
-            f"Detected numeric columns: {len(numeric)}",
-            f"Detected categorical columns: {len(categorical)}",
-        ]
+        columns = ", ".join(
+            str(column)
+            for column in df.columns
+        )
 
-        return "\n".join(lines)
-
-    # ==========================================================
-    # FORMATTING
-    # ==========================================================
-
-    def _format_number(self, value):
-        try:
-
-            if pd.isna(value):
-                return "N/A"
-
-            value = float(value)
-
-            if value.is_integer():
-                return f"{int(value):,}"
-
-            return f"{value:,.2f}"
-
-        except Exception:
-            return str(value)
+        return (
+            "I couldn't determine a reliable analysis "
+            "for that question from the current dataset.\n\n"
+            f"Available columns: {columns}\n\n"
+            "Try asking about totals, counts, missing values, "
+            "groups, top/bottom values, percentages, "
+            "correlations, or unusual values."
+        )

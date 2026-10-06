@@ -105,7 +105,7 @@ class Dashboard(ctk.CTkFrame):
             self.kpi_frame,
             title="Missing",
             icon="⚠️",
-            accent="#F59E0B"
+            accent="#F30606"
         )
 
         self.missing_card.pack(
@@ -199,7 +199,7 @@ class Dashboard(ctk.CTkFrame):
         right_panel = ctk.CTkFrame(
             visual_frame,
             fg_color="transparent",
-            width=350
+            width=300
         )
 
         right_panel.grid(

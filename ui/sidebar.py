@@ -181,6 +181,22 @@ class Sidebar(ctk.CTkFrame):
         )
 
         # =====================================
+        # About
+        # =====================================
+
+        self.about_btn = ctk.CTkButton(
+            self,
+            text="ℹ️ About",
+            command=master.open_about
+        )
+
+        self.about_btn.pack(
+            pady=10,
+            padx=20,
+            fill="x"
+        )
+
+        # =====================================
         # Version
         # =====================================
 

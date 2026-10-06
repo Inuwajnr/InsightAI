@@ -79,31 +79,9 @@ class AIChatPanel(ctk.CTkToplevel):
             pady=10
         )
 
-        if self.master.current_df is not None:
-
-            rows = len(
-                self.master.current_df
-            )
-
-            columns = len(
-                self.master.current_df.columns
-            )
-
-            status_text = (
-                f"📊 Dataset loaded  •  "
-                f"{rows:,} rows  •  "
-                f"{columns:,} columns"
-            )
-
-        else:
-
-            status_text = (
-                "⚠ No dataset loaded"
-            )
-
         self.dataset_status = ctk.CTkLabel(
             status_frame,
-            text=status_text,
+            text="",
             font=("Arial", 13, "bold")
         )
 
@@ -128,24 +106,6 @@ class AIChatPanel(ctk.CTkToplevel):
             expand=True,
             padx=20,
             pady=10
-        )
-
-        self.chat_box.insert(
-            "1.0",
-            "🤖 InsightAI\n\n"
-            "Hello! I can help you analyze your "
-            "currently loaded dataset completely offline.\n\n"
-            "Try asking:\n"
-            "• How many rows are in the dataset?\n"
-            "• How many columns are there?\n"
-            "• Which columns have missing values?\n"
-            "• What are the numeric columns?\n"
-            "• What are the categorical columns?\n"
-            "• What is the total billing amount?\n"
-            "• What is the highest billing amount?\n"
-            "• What is the most common condition?\n"
-            "• How many males are there?\n"
-            "• Show billing by hospital.\n"
         )
 
         self.chat_box.configure(
@@ -201,35 +161,383 @@ class AIChatPanel(ctk.CTkToplevel):
 
         self.question_entry.focus()
 
+        # ------------------------------------------------------
+        # Load current dataset information
+        # ------------------------------------------------------
+
+        self.refresh_dataset_context(
+            show_welcome=True
+        )
+
+    # ==========================================================
+    # Refresh Dataset Context
+    # ==========================================================
+
+    def refresh_dataset_context(
+        self,
+        show_welcome=False
+    ):
+        """
+        Refresh the dataset information and suggested questions.
+
+        This allows the AI Chat window to update when the user
+        loads a different dataset.
+        """
+
+        df = self.master.current_df
+
+        # ------------------------------------------------------
+        # No dataset
+        # ------------------------------------------------------
+
+        if df is None:
+
+            self.dataset_status.configure(
+                text="⚠ No dataset loaded"
+            )
+
+            if show_welcome:
+
+                self._replace_chat_content(
+                    "🤖 InsightAI\n\n"
+                    "Hello! I can help you analyze your "
+                    "dataset completely offline.\n\n"
+                    "Please upload a dataset first."
+                )
+
+            return
+
+        # ------------------------------------------------------
+        # Dataset information
+        # ------------------------------------------------------
+
+        rows = len(df)
+
+        columns = len(
+            df.columns
+        )
+
+        status_text = (
+            f"📊 Dataset loaded  •  "
+            f"{rows:,} rows  •  "
+            f"{columns:,} columns"
+        )
+
+        self.dataset_status.configure(
+            text=status_text
+        )
+
+        # ------------------------------------------------------
+        # Generate dataset-aware suggestions
+        # ------------------------------------------------------
+
+        suggestions = self._generate_suggestions(
+            df
+        )
+
+        welcome_text = (
+            "🤖 InsightAI\n\n"
+            "Hello! I can help you analyze your "
+            "currently loaded dataset completely offline.\n\n"
+            "Try asking:\n"
+            + "\n".join(
+                f"• {question}"
+                for question in suggestions
+            )
+        )
+
+        if show_welcome:
+
+            self._replace_chat_content(
+                welcome_text
+            )
+
+        else:
+
+            # When dataset changes, refresh the
+            # suggestion section without deleting
+            # previous conversation messages.
+            self._replace_suggestions(
+                suggestions
+            )
+
+    # ==========================================================
+    # Generate Dynamic Suggestions
+    # ==========================================================
+
+    def _generate_suggestions(
+        self,
+        df
+    ):
+        """
+        Generate useful questions based on the actual
+        columns in the currently loaded dataset.
+        """
+
+        suggestions = []
+
+        columns = list(
+            df.columns
+        )
+
+        numeric_columns = list(
+            df.select_dtypes(
+                include="number"
+            ).columns
+        )
+
+        categorical_columns = list(
+            df.select_dtypes(
+                include=[
+                    "object",
+                    "category"
+                ]
+            ).columns
+        )
+
+        # ------------------------------------------------------
+        # Always useful
+        # ------------------------------------------------------
+
+        suggestions.append(
+            "How many rows are in the dataset?"
+        )
+
+        suggestions.append(
+            "What are the columns in this dataset?"
+        )
+
+        # ------------------------------------------------------
+        # Missing values
+        # ------------------------------------------------------
+
+        if df.isna().sum().sum() > 0:
+
+            suggestions.append(
+                "Which columns have missing values?"
+            )
+
+        else:
+
+            suggestions.append(
+                "Does this dataset contain any missing values?"
+            )
+
+        # ------------------------------------------------------
+        # Numeric columns
+        # ------------------------------------------------------
+
+        if numeric_columns:
+
+            numeric_col = str(
+                numeric_columns[0]
+            )
+
+            suggestions.append(
+                f"What is the total {numeric_col}?"
+            )
+
+            suggestions.append(
+                f"What is the highest {numeric_col}?"
+            )
+
+            if len(numeric_columns) >= 2:
+
+                suggestions.append(
+                    f"What is the correlation between "
+                    f"{numeric_columns[0]} and "
+                    f"{numeric_columns[1]}?"
+                )
+
+        # ------------------------------------------------------
+        # Categorical columns
+        # ------------------------------------------------------
+
+        if categorical_columns:
+
+            category_col = str(
+                categorical_columns[0]
+            )
+
+            suggestions.append(
+                f"What are the most common values in "
+                f"{category_col}?"
+            )
+
+            suggestions.append(
+                f"Show me the number of records for each "
+                f"{category_col}."
+            )
+
+        # ------------------------------------------------------
+        # Group analysis
+        # ------------------------------------------------------
+
+        if categorical_columns and numeric_columns:
+
+            group_col = str(
+                categorical_columns[0]
+            )
+
+            value_col = str(
+                numeric_columns[0]
+            )
+
+            suggestions.append(
+                f"Which {group_col} has the highest "
+                f"{value_col}?"
+            )
+
+        # ------------------------------------------------------
+        # General AI question
+        # ------------------------------------------------------
+
+        suggestions.append(
+            "What stands out in this dataset?"
+        )
+
+        # ------------------------------------------------------
+        # Remove duplicates
+        # ------------------------------------------------------
+
+        unique_suggestions = []
+
+        for question in suggestions:
+
+            if question not in unique_suggestions:
+
+                unique_suggestions.append(
+                    question
+                )
+
+        # Keep the panel readable.
+        return unique_suggestions[:9]
+
+    # ==========================================================
+    # Replace Entire Chat Content
+    # ==========================================================
+
+    def _replace_chat_content(
+        self,
+        content
+    ):
+
+        self.chat_box.configure(
+            state="normal"
+        )
+
+        self.chat_box.delete(
+            "1.0",
+            "end"
+        )
+
+        self.chat_box.insert(
+            "1.0",
+            content
+        )
+
+        self.chat_box.configure(
+            state="disabled"
+        )
+
+        self.chat_box.see(
+            "1.0"
+        )
+
+    # ==========================================================
+    # Replace Suggestions
+    # ==========================================================
+
+    def _replace_suggestions(
+        self,
+        suggestions
+    ):
+        """
+        Refresh only the suggestion area.
+
+        If the user already has a conversation open, we don't
+        erase the conversation.
+        """
+
+        self.chat_box.configure(
+            state="normal"
+        )
+
+        content = self.chat_box.get(
+            "1.0",
+            "end"
+        )
+
+        marker = "Try asking:\n"
+
+        if marker in content:
+
+            before = content.split(
+                marker,
+                1
+            )[0]
+
+            new_content = (
+                before
+                + marker
+                + "\n".join(
+                    f"• {question}"
+                    for question in suggestions
+                )
+                + "\n"
+            )
+
+            self.chat_box.delete(
+                "1.0",
+                "end"
+            )
+
+            self.chat_box.insert(
+                "1.0",
+                new_content
+            )
+
+        self.chat_box.configure(
+            state="disabled"
+        )
+
     # ==========================================================
     # Send Question
     # ==========================================================
 
     def send_question(self):
 
-        question = self.question_entry.get().strip()
+        question = (
+            self.question_entry
+            .get()
+            .strip()
+        )
 
         if not question:
             return
 
         # Show user's question
+
         self._add_message(
             "You",
             question
         )
 
         # Clear input
+
         self.question_entry.delete(
             0,
             "end"
         )
 
         # Get offline AI answer
+
         answer = self.answer_question(
             question
         )
 
         # Show AI response
+
         self._add_message(
             "InsightAI",
             answer
@@ -286,6 +594,7 @@ class AIChatPanel(ctk.CTkToplevel):
             )
 
         # Send the question to the offline AI engine
+
         return self.ai_engine.answer(
             df,
             question
