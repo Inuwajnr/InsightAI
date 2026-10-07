@@ -99,6 +99,10 @@ class InsightAIApp(ctk.CTk):
         self.dashboard.chart_controls.export_btn.configure(
             command=self.export_chart
         )
+
+        self.dashboard.chart_controls.apply_color_btn.configure(
+            command=self.apply_chart_color
+        )
     # ==================================
     # Display Pivot Table
     # ==================================
@@ -689,10 +693,252 @@ class InsightAIApp(ctk.CTk):
                 "Export Error",
                 str(e)
             )
-    # ======================================================
-    # Refresh Dashboard
-    # ======================================================
+    def apply_chart_color(self):
 
+        if self.current_df is None:
+            messagebox.showwarning(
+                "No Dataset",
+                "Please upload a dataset first."
+            )
+            return
+
+        controls = self.dashboard.chart_controls
+
+        color_name = controls.color_dropdown.get()
+
+        color_map = {
+            "Blue": "#3B82F6",
+            "Green": "#22C55E",
+            "Red": "#EF4444",
+            "Orange": "#F97316",
+            "Purple": "#8B5CF6",
+            "Black": "#111827",
+            "Cyan": "#06B6D4",
+            "Magenta": "#D946EF",
+            "Yellow": "#EAB308",
+            "Gray": "#6B7280",
+            "Brown": "#A16207",
+            "Pink": "#EC4899",
+            "Teal": "#14B8A6",
+            "Lime": "#84CC16",
+            "Indigo": "#4F46E5",
+            "Violet": "#7C3AED",
+            "Gold": "#FFD700",
+            "Silver": "#C0C0C0",
+            "Maroon": "#800000",
+            "Olive": "#808000",
+            "Navy": "#000080",
+            "Turquoise": "#40E0D0",
+            "Coral": "#FF7F50",
+            "Salmon": "#FA8072",
+            "Chocolate": "#D2691E",
+            "Tan": "#D2B48C",
+            "Plum": "#DDA0DD",
+            "Lavender": "#E6E6FA",
+            "Mint": "#98FF98",
+            "Peach": "#FFDAB9",
+            "Sky Blue": "#87CEEB",
+            "Sea Green": "#2E8B57",
+            "Crimson": "#DC143C",
+            "Slate Gray": "#708090",
+            "Khaki": "#F0E68C",
+            "Orchid": "#DA70D6",
+            "Periwinkle": "#CCCCFF",
+            "Rose": "#FF007F",
+            "Siena": "#A0522D",
+            "Amber": "#FFBF00",
+            "Azure": "#007FFF",
+            "Emerald": "#50C878",
+            "Ruby": "#E0115F",
+            "Topaz": "#FFC87C",
+            "Cobalt": "#0047AB",
+            "Jade": "#00A86B",
+            "Onyx": "#353839",
+            "Pearl": "#EAE0C8"
+        }
+
+        selected_color = color_map.get(
+            color_name,
+            "#3B82F6"
+        )
+
+        chart_view = self.dashboard.chart_view
+        ax = chart_view.ax
+
+        # ----------------------------------------
+        # Check whether a chart exists
+        # ----------------------------------------
+
+        if not ax.has_data():
+            messagebox.showwarning(
+                "No Chart",
+                "Please generate a chart first."
+            )
+            return
+
+        try:
+
+            chart = controls.chart_dropdown.get()
+
+            # ----------------------------------------
+            # Bar / Column / Histogram
+            # ----------------------------------------
+
+            if chart in [
+                "Bar Chart",
+                "Column Chart",
+                "Histogram"
+            ]:
+
+                for patch in ax.patches:
+                    patch.set_facecolor(
+                        selected_color
+                    )
+
+            # ----------------------------------------
+            # Line Chart
+            # ----------------------------------------
+
+            elif chart == "Line Chart":
+
+                for line in ax.lines:
+                    line.set_color(
+                        selected_color
+                    )
+
+                    line.set_markerfacecolor(
+                        selected_color
+                    )
+
+                    line.set_markeredgecolor(
+                        selected_color
+                    )
+
+            # ----------------------------------------
+            # Scatter Plot
+            # ----------------------------------------
+
+            elif chart == "Scatter Plot":
+
+                for collection in ax.collections:
+                    collection.set_facecolor(
+                        selected_color
+                    )
+
+                    collection.set_edgecolor(
+                        selected_color
+                    )
+
+            # ----------------------------------------
+            # Pie Chart
+            # ----------------------------------------
+
+            elif chart == "Pie Chart":
+
+                palette = controls.palette_dropdown.get()
+
+                palette_map = {
+
+                    "Default": [
+                        "#3B82F6",
+                        "#22C55E",
+                        "#F97316",
+                        "#8B5CF6",
+                        "#EF4444",
+                        "#06B6D4",
+                        "#EAB308",
+                        "#EC4899"
+                    ],
+
+                    "Ocean": [
+                        "#0EA5E9",
+                        "#0284C7",
+                        "#0369A1",
+                        "#075985",
+                        "#0891B2",
+                        "#06B6D4",
+                        "#14B8A6",
+                        "#2DD4BF"
+                    ],
+
+                    "Nature": [
+                        "#166534",
+                        "#15803D",
+                        "#16A34A",
+                        "#22C55E",
+                        "#65A30D",
+                        "#84CC16",
+                        "#059669",
+                        "#10B981"
+                    ],
+
+                    "Warm": [
+                        "#DC2626",
+                        "#EA580C",
+                        "#F97316",
+                        "#F59E0B",
+                        "#EAB308",
+                        "#EF4444",
+                        "#FB7185",
+                        "#F43F5E"
+                    ],
+
+                    "Purple": [
+                        "#581C87",
+                        "#6B21A8",
+                        "#7E22CE",
+                        "#9333EA",
+                        "#A855F7",
+                        "#C084FC",
+                        "#D8B4FE",
+                        "#E9D5FF"
+                    ],
+
+                    "Monochrome": [
+                        "#111827",
+                        "#1F2937",
+                        "#374151",
+                        "#4B5563",
+                        "#6B7280",
+                        "#9CA3AF",
+                        "#D1D5DB",
+                        "#E5E7EB"
+                    ]
+                }
+
+                selected_palette = palette_map.get(
+                    palette,
+                    palette_map["Default"]
+                )
+
+                pie_patches = ax.patches
+
+                for index, patch in enumerate(
+                    pie_patches
+                ):
+
+                    if index < len(selected_palette):
+
+                        patch.set_facecolor(
+                            selected_palette[index]
+                        )
+
+            # ----------------------------------------
+            # Refresh chart
+            # ----------------------------------------
+
+            chart_view.draw()
+
+            self.dashboard.status_bar.set_status(
+                f"Chart color changed to {color_name}"
+            )
+
+        except Exception as e:
+
+            messagebox.showerror(
+                "Color Error",
+                str(e)
+            )
     
     # ======================================================
     # Clean Dataset

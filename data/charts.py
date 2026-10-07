@@ -233,11 +233,6 @@ class ChartGenerator:
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-        ax.figure.subplots_adjust(
-                left=0.45
-            )
-
-        ax.figure.tight_layout()
 
     # ==========================================
     # Column Chart
@@ -327,7 +322,6 @@ class ChartGenerator:
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-        ax.figure.tight_layout()
     # ==========================================
     # Line Chart
     # ==========================================
@@ -500,7 +494,14 @@ class ChartGenerator:
     # Pie Chart
     # ==========================================
 
-    def pie_chart(self, ax, df, category_col):
+    def pie_chart(
+        self,
+        ax,
+        df,
+        category_col,
+        palette="Default"
+        
+        ):
 
         ax.clear()
 
@@ -509,12 +510,115 @@ class ChartGenerator:
             .value_counts()
             .head(8)
         )
-        
+
+        if counts.empty:
+            raise ValueError(
+                "No data available for the selected category."
+            )
+
+        # ----------------------------------------
+        # Pie Chart Color Palettes
+        # ----------------------------------------
+
+        palettes = {
+
+            "Default": [
+                "#3B82F6",
+                "#22C55E",
+                "#F97316",
+                "#8B5CF6",
+                "#EF4444",
+                "#06B6D4",
+                "#D8BC67",
+                "#EC4899"
+            ],
+
+            "Ocean": [
+                "#0EA5E9",
+                "#0284C7",
+                "#0369A1",
+                "#075985",
+                "#0891B2",
+                "#06B6D4",
+                "#14B8A6",
+                "#2DD4BF"
+            ],
+
+            "Nature": [
+                "#166534",
+                "#15803D",
+                "#16A34A",
+                "#22C55E",
+                "#65A30D",
+                "#84CC16",
+                "#059669",
+                "#10B981"
+            ],
+
+            "Warm": [
+                "#DC2626",
+                "#EA580C",
+                "#F97316",
+                "#F59E0B",
+                "#EAB308",
+                "#EF4444",
+                "#FB7185",
+                "#F43F5E"
+            ],
+
+            "Gray": [
+                "#1F2937",
+                "#374151",
+                "#4B5563",
+                "#6B7280",
+                "#9CA3AF",
+                "#D1D5DB",
+                "#E5E7EB"
+            ],
+
+            "Purple": [
+                "#581C87",
+                "#6B21A8",
+                "#7E22CE",
+                "#9333EA",
+                "#A855F7",
+                "#C084FC",
+                "#D8B4FE",
+                "#E9D5FF"
+            ],
+
+            "Monochrome": [
+                "#111827",
+                "#1F2937",
+                "#374151",
+                "#4B5563",
+                "#6B7280",
+                "#9CA3AF",
+                "#D1D5DB",
+                "#E5E7EB"
+                
+            ]
+            
+            }
+
+        colors = palettes.get(
+            palette,
+            palettes["Default"]
+        )
+
+        # Use only as many colors as there are slices
+        colors = colors[:len(counts)]
+
+        # ----------------------------------------
+        # Draw Pie Chart
+        # ----------------------------------------
+
         counts.plot(
             kind="pie",
             autopct="%1.1f%%",
             startangle=90,
-            ax=ax
+            ax=ax,
+            colors=colors
         )
 
         ax.set_ylabel("")
@@ -524,6 +628,8 @@ class ChartGenerator:
             fontsize=18,
             fontweight="bold"
         )
+
+        ax.figure.canvas.draw_idle()
 
     # ==========================================
     # Histogram
